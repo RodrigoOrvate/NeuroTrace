@@ -1,439 +1,819 @@
-import tkinter as tk
-from tkinter import filedialog
+import sys
+import os
+import subprocess
+from functools import partial
+
 import pandas as pd
 import openpyxl
-import subprocess
-import os
-import sys
-from functools import partial
-from PIL import Image, ImageTk
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QLineEdit, QScrollArea, QFrame, QFileDialog,
+    QMessageBox, QGraphicsDropShadowEffect, QSpinBox, QSizePolicy,
+    QGroupBox, QGridLayout, QSpacerItem
+)
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, pyqtSignal, QTimer
+from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap
 
-# Importando as funções modificadas
+# Importando as funções de processamento (inalteradas)
 from procurar_objeto import procurar
 from procurar_distvel import organizar
 
-# Configurações Globais
-caminho_arquivo1 = ""
-caminho_arquivo2 = ""
-conjuntos_objetos = []
-global_workbook = openpyxl.Workbook()
-global_excel_filename_obj = "dados_filtrados_obj.xlsx"
-global_excel_filename_distvel = "dados_filtrados_distvel.xlsx"
-erro_exibido = False
-colunas_desejadas = ['DAY', 'ANIMAL', 'OBJECTS', 'Total Bouts', 'Total Duration(Second)', 'Latency(Second)', 'Ending time(Second) of First Bout']
-entry_label_style = {"bg": "#F0F0F0", "fg": "#000000", "font": ("Helvetica", 10), "bd": 0, "highlightthickness": 2, "highlightbackground": "#4CAF50", "highlightcolor": "#4CAF50", "relief": "flat"}
-pares_objetos = set()
-objs = set()
+# ─── Paleta de Cores ───────────────────────────────────────────
+COLORS = {
+    "bg":           "#0f0f1a",
+    "card":         "#1a1a2e",
+    "card_border":  "#2d2d4a",
+    "accent":       "#ab3d4c",
+    "accent_hover": "#c9505f",
+    "accent_dark":  "#8a2e3b",
+    "danger":       "#ff4757",
+    "danger_hover": "#ff6b7a",
+    "text":         "#e8e8f0",
+    "text_muted":   "#8888aa",
+    "input_bg":     "#12122a",
+    "input_border": "#3a3a5c",
+    "input_focus":  "#ab3d4c",
+    "surface":      "#16162e",
+    "success":      "#ab3d4c",
+    "warning":      "#ffa502",
+    "scroll_bg":    "#1a1a2e",
+    "scroll_handle":"#3a3a5c",
+}
 
-# --- Funções do Sistema (Mantidas ou Levemente Ajustadas) ---
+# ─── Stylesheet Global ────────────────────────────────────────
+GLOBAL_STYLESHEET = f"""
+QMainWindow {{
+    background-color: {COLORS['bg']};
+}}
 
-def pesquisar_arquivo1():
-    global caminho_arquivo1
-    filename1 = filedialog.askopenfilename()
-    caminho_arquivo1 = filename1
-    caminho_entry1.config(state='normal')
-    caminho_entry1.delete(0, tk.END) # Garante que limpa antes de inserir
-    caminho_entry1.insert(0, filename1)
-    caminho_entry1.config(state='readonly')
-    liberar_criar_conjuntos()
-    atualizar_rotulos() # Chama atualização ao carregar
+QWidget {{
+    color: {COLORS['text']};
+    font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+}}
 
-def pesquisar_arquivo2():
-    global caminho_arquivo2
-    filename2 = filedialog.askopenfilename()
-    caminho_arquivo2 = filename2
-    caminho_entry2.config(state='normal')
-    caminho_entry2.delete(0, tk.END)
-    caminho_entry2.insert(0, filename2)
-    caminho_entry2.config(state='readonly')
-    liberar_botaodois()
+QLabel {{
+    color: {COLORS['text']};
+    background: transparent;
+}}
 
-def limpar_entry1():
-    global caminho_arquivo1
-    caminho_entry1.config(state='normal')  
-    caminho_entry1.delete(0, tk.END)  
-    caminho_entry1.config(state='readonly')
-    caminho_arquivo1 = "" # Limpa a variável
-    quantidade_entry.delete(0, tk.END)
-    # Limpa labels de objetos
-    pares_objetos_var.set("")
-    objs_var.set("")
+QLineEdit {{
+    background-color: {COLORS['input_bg']};
+    border: 1.5px solid {COLORS['input_border']};
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: {COLORS['text']};
+    font-size: 13px;
+    selection-background-color: {COLORS['accent']};
+}}
 
-def limpar_entry2():
-    global caminho_arquivo2
-    caminho_entry2.config(state='normal')  
-    caminho_entry2.delete(0, tk.END)  
-    caminho_entry2.config(state='readonly')
-    caminho_arquivo2 = "" # Limpa a variável
+QLineEdit:focus {{
+    border-color: {COLORS['input_focus']};
+    background-color: #14142e;
+}}
 
-# ... (Funções criar_conjunto_labels, on_entry_click, on_focusout mantidas iguais) ...
+QLineEdit:read-only {{
+    background-color: {COLORS['surface']};
+    border-color: {COLORS['card_border']};
+    color: {COLORS['text_muted']};
+}}
 
-def criar_conjunto_labels(conjuntos_frame, numero_conjunto):
-    conjunto_frame = tk.Frame(conjuntos_frame, relief="solid", bd=1)
-    conjunto_frame.grid(row=numero_conjunto-1, column=0, padx=5, pady=5, sticky="ew")
-    
-    titulo_label = tk.Label(conjunto_frame, text=f"Planilha {numero_conjunto}", font=("Arial", 12, "bold"))
-    titulo_label.grid(row=0, column=0, columnspan=4, pady=(10, 5))
+QSpinBox {{
+    background-color: {COLORS['input_bg']};
+    border: 1.5px solid {COLORS['input_border']};
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: {COLORS['text']};
+    font-size: 13px;
+    min-width: 80px;
+}}
 
-    objeto1_entry = tk.Entry(conjunto_frame, font=("Helvetica", 10, "bold"))
-    objeto1_entry.insert(0, "Primeiro par_objeto")
-    objeto1_entry.config(fg="grey")
-    objeto1_entry.bind("<FocusIn>", lambda event: on_entry_click(objeto1_entry, "Primeiro par_objeto"))
-    objeto1_entry.bind("<FocusOut>", lambda event: on_focusout(objeto1_entry, "Primeiro par_objeto"))
-    objeto1_entry.grid(row=1, column=1, padx=(0, 5), pady=5, sticky="ew")
+QSpinBox:focus {{
+    border-color: {COLORS['input_focus']};
+}}
 
-    objeto2_entry = tk.Entry(conjunto_frame, font=("Helvetica", 10, "bold"))
-    objeto2_entry.insert(0, "Segundo par_objeto")
-    objeto2_entry.config(fg="grey")
-    objeto2_entry.bind("<FocusIn>", lambda event: on_entry_click(objeto2_entry, "Segundo par_objeto"))
-    objeto2_entry.bind("<FocusOut>", lambda event: on_focusout(objeto2_entry, "Segundo par_objeto"))
-    objeto2_entry.grid(row=1, column=3, padx=(0, 5), pady=5, sticky="ew")
+QSpinBox::up-button, QSpinBox::down-button {{
+    background-color: {COLORS['card']};
+    border: none;
+    border-radius: 4px;
+    width: 20px;
+}}
 
-    obj1_entry = tk.Entry(conjunto_frame, font=("Helvetica", 10, "bold"))
-    obj1_entry.insert(0, "Primeiro OBJ")
-    obj1_entry.config(fg="grey")
-    obj1_entry.bind("<FocusIn>", lambda event: on_entry_click(obj1_entry, "Primeiro OBJ"))
-    obj1_entry.bind("<FocusOut>", lambda event: on_focusout(obj1_entry, "Primeiro OBJ"))
-    obj1_entry.grid(row=2, column=1, padx=(0, 5), pady=5, sticky="ew")
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+    background-color: {COLORS['accent']};
+}}
 
-    obj2_entry = tk.Entry(conjunto_frame, font=("Helvetica", 10, "bold"))
-    obj2_entry.insert(0, "Segundo OBJ")
-    obj2_entry.config(fg="grey")
-    obj2_entry.bind("<FocusIn>", lambda event: on_entry_click(obj2_entry, "Segundo OBJ"))
-    obj2_entry.bind("<FocusOut>", lambda event: on_focusout(obj2_entry, "Segundo OBJ"))
-    obj2_entry.grid(row=2, column=3, padx=(0, 5), pady=5, sticky="ew")
+QPushButton {{
+    border: none;
+    border-radius: 8px;
+    padding: 10px 22px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}}
 
-    return objeto1_entry, objeto2_entry, obj1_entry, obj2_entry
+QScrollArea {{
+    border: none;
+    background: transparent;
+}}
 
-def on_entry_click(entry, placeholder):
-    if entry.cget("fg") == "grey" and entry.get() == placeholder:
-        entry.delete(0, "end")
-        entry.config(fg="black")
+QScrollBar:vertical {{
+    background: {COLORS['scroll_bg']};
+    width: 8px;
+    border-radius: 4px;
+    margin: 0;
+}}
 
-def on_focusout(entry, placeholder):
-    if entry.get() == "":
-        entry.insert(0, placeholder)
-        entry.config(fg="grey")
+QScrollBar::handle:vertical {{
+    background: {COLORS['scroll_handle']};
+    min-height: 30px;
+    border-radius: 4px;
+}}
 
-def reiniciar_programa():
-    try:
-        python = sys.executable
-        os.chdir(os.path.dirname(sys.argv[0]))
-        subprocess.Popen([python] + sys.argv)
-        root.destroy()
-    except Exception as e:
-        print(f"Erro ao reiniciar o programa: {e}")
+QScrollBar::handle:vertical:hover {{
+    background: {COLORS['accent']};
+}}
 
-def mostrar_erro(mensagem):
-    global erro_exibido
-    if not erro_exibido:
-        erro_window = tk.Toplevel()
-        erro_window.title("Erro")
-        label_erro = tk.Label(erro_window, text=mensagem, font=("Helvetica", 10))
-        label_erro.pack(padx=20, pady=10)
-        ok_button = tk.Button(erro_window, text="OK", font=("Helvetica", 10, "bold"), command=erro_window.destroy)
-        ok_button.pack(pady=5)
-        erro_window.geometry("470x100")
-        erro_window.resizable(False, False)
-        x_erro = (root.winfo_screenwidth() - erro_window.winfo_reqwidth()) / 2
-        y_erro = (root.winfo_screenheight() - erro_window.winfo_reqheight()) / 2
-        erro_window.geometry("+%d+%d" % (x_erro, y_erro))
-        erro_exibido = True
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
 
-def mostrar_erro2(mensagem):
-    # Mesma lógica, ou pode reutilizar mostrar_erro
-    mostrar_erro(mensagem) 
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: none;
+}}
 
-def validar_quantidade_entry(*args):
-    quantidade_texto = quantidade_entry.get()
-    if quantidade_texto == "": return
-    if not quantidade_texto.isdigit():
-        mostrar_erro("Por favor, digite apenas números inteiros para a quantidade de conjuntos.")
-        quantidade_entry.delete(0, tk.END)
+QGroupBox {{
+    background-color: {COLORS['card']};
+    border: 1px solid {COLORS['card_border']};
+    border-radius: 12px;
+    margin-top: 12px;
+    padding: 14px;
+    padding-top: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: {COLORS['accent']};
+}}
 
-def criar_conjuntos():
-    global erro_exibido, global_workbook, conjuntos_objetos
-    erro_exibido = False
-    
-    try:
-        num_conjuntos = int(quantidade_entry.get())
-    except ValueError:
-        mostrar_erro2("Por favor, digite um número válido para a quantidade de conjuntos.")
-        return
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 6px 16px;
+    background-color: {COLORS['card']};
+    border: 1px solid {COLORS['card_border']};
+    border-radius: 8px;
+    color: {COLORS['accent']};
+    left: 14px;
+}}
+"""
 
-    if num_conjuntos == 0:
-        limite_label.config(text="Mínimo de planilhas é 1.", fg="red")
-        return
-    if num_conjuntos > 100:
-        limite_label.config(text="Limite máximo de 100 planilhas alcançado.", fg="red")
-        return
-    else:
-        limite_label.config(text="")
 
-    conjuntos_objetos = []
-    for child in conjuntos_frame.winfo_children():
-        child.destroy()
+def make_accent_button(text, icon_text=""):
+    """Cria um botão com estilo accent (vermelho laboratorial)."""
+    btn = QPushButton(f"  {icon_text}  {text}  " if icon_text else f"  {text}  ")
+    btn.setStyleSheet(f"""
+        QPushButton {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {COLORS['accent']}, stop:1 {COLORS['accent_dark']});
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 13px;
+            padding: 10px 24px;
+            border-radius: 8px;
+        }}
+        QPushButton:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {COLORS['accent_hover']}, stop:1 {COLORS['accent']});
+        }}
+        QPushButton:pressed {{
+            background: {COLORS['accent_dark']};
+        }}
+        QPushButton:disabled {{
+            background: {COLORS['card_border']};
+            color: {COLORS['text_muted']};
+        }}
+    """)
+    btn.setCursor(Qt.PointingHandCursor)
+    btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    shadow = QGraphicsDropShadowEffect()
+    shadow.setBlurRadius(18)
+    shadow.setOffset(0, 4)
+    shadow.setColor(QColor(171, 61, 76, 60))
+    btn.setGraphicsEffect(shadow)
+    return btn
 
-    global_workbook = openpyxl.Workbook() # Reseta o workbook aqui
 
-    for i in range(1, num_conjuntos + 1):
-        primeiro_objeto_entry, segundo_objeto_entry, primeiro_obj_entry, segundo_obj_entry = criar_conjunto_labels(conjuntos_frame, i)
-        conjuntos_objetos.append((primeiro_objeto_entry, segundo_objeto_entry, primeiro_obj_entry, segundo_obj_entry))
-    
-    # Remove a planilha padrão 'Sheet' se existirem outras, ou deixa para depois
-    # Por enquanto, salvamos assim
-    # global_workbook.save(global_excel_filename_obj) # Salvar aqui pode ser prematuro, mas estava no original
+def make_danger_button(text, icon_text=""):
+    """Cria um botão com estilo danger (vermelho)."""
+    btn = QPushButton(f"  {icon_text}  {text}  " if icon_text else f"  {text}  ")
+    btn.setStyleSheet(f"""
+        QPushButton {{
+            background: transparent;
+            color: {COLORS['danger']};
+            border: 1.5px solid {COLORS['danger']};
+            font-weight: 600;
+            font-size: 12px;
+            padding: 6px 14px;
+            border-radius: 6px;
+        }}
+        QPushButton:hover {{
+            background: {COLORS['danger']};
+            color: white;
+        }}
+    """)
+    btn.setCursor(Qt.PointingHandCursor)
+    btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    return btn
 
-    conjuntos_canvas.update_idletasks()
-    altura_conjuntos = conjuntos_frame.winfo_reqheight()
-    conjuntos_canvas.config(scrollregion=(0, 0, conjuntos_canvas.winfo_width(), altura_conjuntos))
 
-    altura_canvas = conjuntos_canvas.winfo_height()
-    if num_conjuntos > 0:
-        scrollbar.pack(side="right", fill="y")
-        altura_scrollbar = min(1.0, altura_canvas / altura_conjuntos)
-        scrollbar.set(0, altura_scrollbar)
-    else:
-        scrollbar.pack_forget()
-    liberar_botaoum()
+def make_secondary_button(text):
+    """Cria um botão secundário (outline)."""
+    btn = QPushButton(f"  {text}  ")
+    btn.setStyleSheet(f"""
+        QPushButton {{
+            background: transparent;
+            color: {COLORS['accent']};
+            border: 1.5px solid {COLORS['accent']};
+            font-weight: 600;
+            font-size: 13px;
+            padding: 10px 22px;
+            border-radius: 8px;
+        }}
+        QPushButton:hover {{
+            background: {COLORS['accent']};
+            color: #0a0a1a;
+        }}
+        QPushButton:disabled {{
+            border-color: {COLORS['card_border']};
+            color: {COLORS['text_muted']};
+        }}
+    """)
+    btn.setCursor(Qt.PointingHandCursor)
+    btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    return btn
 
-def liberar_criar_conjuntos():
-    if caminho_arquivo1 and caminho_entry1.get():
-        criar_button.config(state="normal")
-    else:
-        criar_button.config(state="disabled")
-        for child in conjuntos_frame.winfo_children():
-            child.destroy()
-    root.after(100, liberar_criar_conjuntos)
 
-def liberar_botaoum():
-    global conjuntos_objetos, caminho_arquivo1
-    all_entries_filled = True
-    for objeto1_entry, objeto2_entry, obj1_entry, obj2_entry in conjuntos_objetos:
-        if objeto1_entry.winfo_exists():
-             if not objeto1_entry.get() or objeto1_entry.get() == "Primeiro par_objeto" \
-                or not objeto2_entry.get() or objeto2_entry.get() == "Segundo par_objeto" \
-                or not obj1_entry.get() or obj1_entry.get() == "Primeiro OBJ" \
-                or not obj2_entry.get() or obj2_entry.get() == "Segundo OBJ":
-                all_entries_filled = False
-                break
+class PlaceholderLineEdit(QLineEdit):
+    """QLineEdit personalizado com placeholder que desaparece ao focar."""
+    def __init__(self, placeholder="", parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText(placeholder)
+
+
+class ConjuntoCard(QFrame):
+    """Card visual para cada conjunto de planilha (par de objetos)."""
+
+    def __init__(self, numero, parent=None):
+        super().__init__(parent)
+        self.numero = numero
+        self._setup_ui()
+        self._setup_style()
+
+    def _setup_style(self):
+        self.setStyleSheet(f"""
+            ConjuntoCard {{
+                background-color: {COLORS['surface']};
+                border: 1px solid {COLORS['card_border']};
+                border-radius: 10px;
+            }}
+        """)
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 14)
+        layout.setSpacing(10)
+
+        # Título
+        title = QLabel(f"📋  Planilha {self.numero}")
+        title.setStyleSheet(f"""
+            font-size: 14px;
+            font-weight: 700;
+            color: {COLORS['accent']};
+            padding-bottom: 4px;
+        """)
+        layout.addWidget(title)
+
+        # Linha separadora
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setStyleSheet(f"background-color: {COLORS['card_border']}; max-height: 1px;")
+        layout.addWidget(separator)
+
+        # Grid de entradas
+        grid = QGridLayout()
+        grid.setSpacing(8)
+
+        lbl_par1 = QLabel("Par Objeto 1:")
+        lbl_par1.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
+        self.objeto1_entry = PlaceholderLineEdit("Ex: A")
+        grid.addWidget(lbl_par1, 0, 0)
+        grid.addWidget(self.objeto1_entry, 0, 1)
+
+        lbl_par2 = QLabel("Par Objeto 2:")
+        lbl_par2.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
+        self.objeto2_entry = PlaceholderLineEdit("Ex: B")
+        grid.addWidget(lbl_par2, 0, 2)
+        grid.addWidget(self.objeto2_entry, 0, 3)
+
+        lbl_obj1 = QLabel("OBJ 1:")
+        lbl_obj1.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
+        self.obj1_entry = PlaceholderLineEdit("Ex: 1")
+        grid.addWidget(lbl_obj1, 1, 0)
+        grid.addWidget(self.obj1_entry, 1, 1)
+
+        lbl_obj2 = QLabel("OBJ 2:")
+        lbl_obj2.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
+        self.obj2_entry = PlaceholderLineEdit("Ex: 2")
+        grid.addWidget(lbl_obj2, 1, 2)
+        grid.addWidget(self.obj2_entry, 1, 3)
+
+        layout.addLayout(grid)
+
+    def get_values(self):
+        """Retorna os 4 valores dos entries."""
+        return (
+            self.objeto1_entry.text().strip(),
+            self.objeto2_entry.text().strip(),
+            self.obj1_entry.text().strip(),
+            self.obj2_entry.text().strip(),
+        )
+
+    def all_filled(self):
+        """Verifica se todos os campos estão preenchidos."""
+        vals = self.get_values()
+        return all(v != "" for v in vals)
+
+
+class MainWindow(QMainWindow):
+    """Janela principal do aplicativo AUTOMATIZADO."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("AUTOMATIZADO — Topscan Data Organizer")
+        self.setMinimumSize(820, 780)
+        self.resize(860, 800)
+
+        # Estado
+        self.caminho_arquivo1 = ""
+        self.caminho_arquivo2 = ""
+        self.conjuntos_cards = []
+        self.global_workbook = openpyxl.Workbook()
+        self.global_excel_filename_obj = "dados_filtrados_obj.xlsx"
+        self.global_excel_filename_distvel = "dados_filtrados_distvel.xlsx"
+        self.colunas_desejadas = [
+            'DAY', 'ANIMAL', 'OBJECTS', 'Total Bouts',
+            'Total Duration(Second)', 'Latency(Second)',
+            'Ending time(Second) of First Bout'
+        ]
+        self.pares_objetos = set()
+        self.objs = set()
+
+        # Ícone
+        try:
+            caminho_icone = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memorylab.ico")
+            if os.path.exists(caminho_icone):
+                self.setWindowIcon(QIcon(caminho_icone))
+        except Exception:
+            pass
+
+        self._build_ui()
+
+        # Timer para validação contínua de botões
+        self.validation_timer = QTimer(self)
+        self.validation_timer.timeout.connect(self._validate_buttons)
+        self.validation_timer.start(300)
+
+        # Centraliza na tela
+        self._center_on_screen()
+
+    def _center_on_screen(self):
+        screen = QApplication.primaryScreen().geometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        self.move(x, y)
+
+    def _build_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(28, 20, 28, 20)
+        main_layout.setSpacing(16)
+
+        # ─── Header ───
+        header = QLabel("AUTOMATIZADO")
+        header.setAlignment(Qt.AlignCenter)
+        header.setStyleSheet(f"""
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: 3px;
+            color: {COLORS['accent']};
+            padding: 6px 0;
+        """)
+        main_layout.addWidget(header)
+
+        subtitle = QLabel("Organizador de dados Topscan")
+        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setStyleSheet(f"""
+            font-size: 12px;
+            color: {COLORS['text_muted']};
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        """)
+        main_layout.addWidget(subtitle)
+
+        # ─── Seção 1: Arquivos ───
+        files_group = QGroupBox("Arquivos de Entrada")
+        files_layout = QVBoxLayout(files_group)
+        files_layout.setContentsMargins(14, 30, 14, 14)
+        files_layout.setSpacing(10)
+
+        # Arquivo OBJ
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+        self.pesquisar1_btn = make_accent_button("Pesquisar Arquivo (OBJ)", "📂")
+        self.pesquisar1_btn.clicked.connect(self._pesquisar_arquivo1)
+        row1.addWidget(self.pesquisar1_btn)
+        self.caminho_entry1 = QLineEdit()
+        self.caminho_entry1.setReadOnly(True)
+        self.caminho_entry1.setPlaceholderText("Nenhum arquivo selecionado...")
+        row1.addWidget(self.caminho_entry1, stretch=1)
+        self.limpar1_btn = make_danger_button("✕")
+        self.limpar1_btn.setFixedWidth(36)
+        self.limpar1_btn.clicked.connect(self._limpar_entry1)
+        row1.addWidget(self.limpar1_btn)
+        files_layout.addLayout(row1)
+
+        # Arquivo DIST/VEL
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
+        self.pesquisar2_btn = make_accent_button("Pesquisar Arquivo (DIST/VEL)", "📂")
+        self.pesquisar2_btn.clicked.connect(self._pesquisar_arquivo2)
+        row2.addWidget(self.pesquisar2_btn)
+        self.caminho_entry2 = QLineEdit()
+        self.caminho_entry2.setReadOnly(True)
+        self.caminho_entry2.setPlaceholderText("Nenhum arquivo selecionado...")
+        row2.addWidget(self.caminho_entry2, stretch=1)
+        self.limpar2_btn = make_danger_button("✕")
+        self.limpar2_btn.setFixedWidth(36)
+        self.limpar2_btn.clicked.connect(self._limpar_entry2)
+        row2.addWidget(self.limpar2_btn)
+        files_layout.addLayout(row2)
+
+        files_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        main_layout.addWidget(files_group)
+
+        # ─── Seção 2: Configuração de Conjuntos ───
+        config_group = QGroupBox("Configuração dos Conjuntos")
+        config_layout = QVBoxLayout(config_group)
+        config_layout.setContentsMargins(14, 30, 14, 14)
+        config_layout.setSpacing(12)
+
+        # Linha 1: Label + SpinBox + Criar + Ver Objetos
+        config_row1 = QHBoxLayout()
+        config_row1.setSpacing(12)
+
+        lbl_qty = QLabel("Quantidade de planilhas:")
+        lbl_qty.setStyleSheet(f"font-weight: 600; font-size: 13px; color: {COLORS['text']};")
+        config_row1.addWidget(lbl_qty)
+
+        self.quantidade_spin = QSpinBox()
+        self.quantidade_spin.setRange(0, 100)
+        self.quantidade_spin.setValue(0)
+        self.quantidade_spin.setFixedWidth(90)
+        self.quantidade_spin.setFixedHeight(36)
+        config_row1.addWidget(self.quantidade_spin)
+
+        config_row1.addSpacing(10)
+
+        self.criar_btn = make_accent_button("Criar Conjuntos", "➕")
+        self.criar_btn.setEnabled(False)
+        self.criar_btn.clicked.connect(self._criar_conjuntos)
+        config_row1.addWidget(self.criar_btn)
+
+        config_row1.addSpacing(6)
+
+        self.ver_objetos_btn = make_secondary_button("Ver Objetos  🔍")
+        self.ver_objetos_btn.clicked.connect(self._atualizar_rotulos)
+        config_row1.addWidget(self.ver_objetos_btn)
+
+        config_row1.addStretch(1)
+        config_layout.addLayout(config_row1)
+
+        # Linha 2: Info dos objetos detectados
+        self.pares_label = QLabel("")
+        self.pares_label.setWordWrap(True)
+        self.pares_label.setStyleSheet(f"font-size: 12px; color: {COLORS['text_muted']}; padding: 2px 0;")
+        config_layout.addWidget(self.pares_label)
+
+        self.objs_label = QLabel("")
+        self.objs_label.setWordWrap(True)
+        self.objs_label.setStyleSheet(f"font-size: 12px; color: {COLORS['text_muted']}; padding: 2px 0;")
+        config_layout.addWidget(self.objs_label)
+
+        # Label de limite/erro
+        self.limite_label = QLabel("")
+        self.limite_label.setStyleSheet(f"color: {COLORS['danger']}; font-size: 12px;")
+        config_layout.addWidget(self.limite_label)
+
+        config_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        main_layout.addWidget(config_group)
+
+        # ─── Seção 3: Scroll de Conjuntos ───
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setMinimumHeight(100)
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background: {COLORS['bg']};
+                border: 1px solid {COLORS['card_border']};
+                border-radius: 10px;
+            }}
+        """)
+
+        self.scroll_widget = QWidget()
+        self.scroll_widget.setStyleSheet(f"background: {COLORS['bg']};")
+        self.scroll_layout = QVBoxLayout(self.scroll_widget)
+        self.scroll_layout.setContentsMargins(8, 8, 8, 8)
+        self.scroll_layout.setSpacing(10)
+        self.scroll_layout.addStretch()
+
+        self.scroll_area.setWidget(self.scroll_widget)
+        main_layout.addWidget(self.scroll_area, stretch=1)
+
+        # ─── Seção 4: Botões de Ação ───
+        action_frame = QFrame()
+        action_frame.setStyleSheet(f"""
+            QFrame {{
+                background: {COLORS['card']};
+                border: 1px solid {COLORS['card_border']};
+                border-radius: 12px;
+                padding: 8px;
+            }}
+        """)
+        action_layout = QHBoxLayout(action_frame)
+        action_layout.setContentsMargins(16, 10, 16, 10)
+        action_layout.setSpacing(12)
+
+        self.procurar_obj_btn = make_accent_button("Procurar Objetos", "🔬")
+        self.procurar_obj_btn.setEnabled(False)
+        self.procurar_obj_btn.clicked.connect(self._procurar_objetos)
+        action_layout.addWidget(self.procurar_obj_btn)
+
+        self.organizar_distvel_btn = make_accent_button("Organizar Dist/Vel", "📊")
+        self.organizar_distvel_btn.setEnabled(False)
+        self.organizar_distvel_btn.clicked.connect(self._organizar_distvel)
+        action_layout.addWidget(self.organizar_distvel_btn)
+
+        self.reiniciar_btn = make_secondary_button("Reiniciar  🔄")
+        self.reiniciar_btn.clicked.connect(self._reiniciar_programa)
+        action_layout.addWidget(self.reiniciar_btn)
+
+        action_layout.addStretch()
+        main_layout.addWidget(action_frame)
+
+    # ─── Ações de Arquivo ──────────────────────────────────────
+    def _pesquisar_arquivo1(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Selecionar Arquivo (OBJ)", "",
+            "Arquivos Excel (*.xlsx *.xls);;Todos (*.*)"
+        )
+        if filename:
+            self.caminho_arquivo1 = filename
+            self.caminho_entry1.setText(filename)
+            self._atualizar_rotulos()
+
+    def _pesquisar_arquivo2(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Selecionar Arquivo (DIST/VEL)", "",
+            "Arquivos Excel (*.xlsx *.xls);;Todos (*.*)"
+        )
+        if filename:
+            self.caminho_arquivo2 = filename
+            self.caminho_entry2.setText(filename)
+
+    def _limpar_entry1(self):
+        self.caminho_arquivo1 = ""
+        self.caminho_entry1.clear()
+        self.quantidade_spin.setValue(0)
+        self.pares_label.setText("")
+        self.objs_label.setText("")
+        self._clear_conjuntos()
+
+    def _limpar_entry2(self):
+        self.caminho_arquivo2 = ""
+        self.caminho_entry2.clear()
+
+    # ─── Gerenciamento de Conjuntos ────────────────────────────
+    def _criar_conjuntos(self):
+        num = self.quantidade_spin.value()
+
+        if num == 0:
+            self.limite_label.setText("⚠  Mínimo de planilhas é 1.")
+            return
+        if num > 100:
+            self.limite_label.setText("⚠  Limite máximo de 100 planilhas.")
+            return
+        self.limite_label.setText("")
+
+        self._clear_conjuntos()
+        self.global_workbook = openpyxl.Workbook()
+
+        for i in range(1, num + 1):
+            card = ConjuntoCard(i)
+            # Insere antes do stretch final
+            self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, card)
+            self.conjuntos_cards.append(card)
+
+    def _clear_conjuntos(self):
+        for card in self.conjuntos_cards:
+            card.setParent(None)
+            card.deleteLater()
+        self.conjuntos_cards.clear()
+
+    # ─── Validação de Botões ───────────────────────────────────
+    def _validate_buttons(self):
+        # Criar Conjuntos: habilitado se arquivo1 carregado
+        self.criar_btn.setEnabled(bool(self.caminho_arquivo1))
+
+        # Procurar Objetos: habilitado se arquivo1 e todos os cards preenchidos
+        can_search_obj = (
+            bool(self.caminho_arquivo1)
+            and len(self.conjuntos_cards) > 0
+            and all(card.all_filled() for card in self.conjuntos_cards)
+        )
+        self.procurar_obj_btn.setEnabled(can_search_obj)
+
+        # Organizar Dist/Vel: habilitado se arquivo2 carregado
+        self.organizar_distvel_btn.setEnabled(bool(self.caminho_arquivo2))
+
+    # ─── Processamento ─────────────────────────────────────────
+    def _procurar_objetos(self):
+        if 'Sheet' in self.global_workbook.sheetnames:
+            del self.global_workbook['Sheet']
+
+        try:
+            for card in self.conjuntos_cards:
+                obj1, obj2, o1, o2 = card.get_values()
+                procurar(
+                    obj1.upper(), obj2.upper(), o1.upper(), o2.upper(),
+                    self.caminho_arquivo1, self.global_workbook, self.colunas_desejadas
+                )
+            self.global_workbook.save(self.global_excel_filename_obj)
+            self._mostrar_sucesso()
+        except Exception as e:
+            self._mostrar_erro(f"Erro ao processar objetos:\n{str(e)}")
+
+    def _organizar_distvel(self):
+        self.global_workbook = openpyxl.Workbook()
+
+        try:
+            organizar(self.caminho_arquivo2, self.global_workbook)
+
+            if 'Sheet' in self.global_workbook.sheetnames:
+                del self.global_workbook['Sheet']
+
+            self.global_workbook.save(self.global_excel_filename_distvel)
+            self._mostrar_sucesso()
+        except Exception as e:
+            self._mostrar_erro(f"Erro ao organizar Dist/Vel:\n{str(e)}")
+
+    # ─── Leitura de Objetos ────────────────────────────────────
+    def _procurar_colunas(self, caminho):
+        try:
+            df = pd.read_excel(caminho, header=6)
+            objetos = set(df['OBJECTS'].astype(str))
+            events = set(df['Events'].astype(str))
+
+            self.pares_objetos.clear()
+            for obj in objetos:
+                if obj.strip() and obj != 'nan':
+                    pares = obj.split(' & ')
+                    self.pares_objetos.update(pares)
+
+            self.objs.clear()
+            for event in events:
+                if "OBJ" in event:
+                    try:
+                        o = event.split("OBJ")[1].split()[0]
+                        self.objs.add(o)
+                    except IndexError:
+                        pass
+        except Exception as e:
+            self.pares_label.setText(f"⚠ Erro ao ler arquivo: {e}")
+            self.objs_label.setText("")
+
+    def _atualizar_rotulos(self):
+        if self.caminho_arquivo1:
+            self._procurar_colunas(self.caminho_arquivo1)
+            pares_text = ', '.join(sorted(self.pares_objetos))
+            objs_text = ', '.join(sorted(self.objs))
+            self.pares_label.setText(f"🔹 Pares de Objetos: {pares_text}" if pares_text else "Nenhum par encontrado.")
+            self.objs_label.setText(f"🔹 OBJs: {objs_text}" if objs_text else "Nenhum OBJ encontrado.")
         else:
-             all_entries_filled = False # Se não existem, não estão preenchidos
+            self.pares_label.setText("⚠ Selecione um arquivo OBJ primeiro.")
+            self.objs_label.setText("")
 
-    if all_entries_filled and caminho_arquivo1:
-        procurar_button1.config(state="normal")
-    else:
-        procurar_button1.config(state="disabled")
-    root.after(100, liberar_botaoum)
+    # ─── Diálogos ──────────────────────────────────────────────
+    def _mostrar_sucesso(self):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Sucesso")
+        msg.setText("✅  Dados filtrados com sucesso!\nVerifique o arquivo gerado.")
+        msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {COLORS['card']};
+            }}
+            QMessageBox QLabel {{
+                color: {COLORS['text']};
+                font-size: 14px;
+                padding: 12px;
+            }}
+            QPushButton {{
+                background: {COLORS['accent']};
+                color: #0a0a1a;
+                font-weight: 700;
+                padding: 8px 28px;
+                border-radius: 6px;
+                font-size: 13px;
+            }}
+            QPushButton:hover {{
+                background: {COLORS['accent_hover']};
+            }}
+        """)
+        msg.exec_()
+        self._abrir_arquivo_excel()
 
-def liberar_botaodois():
-    if caminho_arquivo2 and caminho_entry2.get():
-        procurar_button2.config(state="normal")
-    else:
-        procurar_button2.config(state="disabled")
-    root.after(100, liberar_botaodois)
+    def _mostrar_erro(self, mensagem):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Erro")
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText(mensagem)
+        msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {COLORS['card']};
+            }}
+            QMessageBox QLabel {{
+                color: {COLORS['text']};
+                font-size: 13px;
+                padding: 10px;
+            }}
+            QPushButton {{
+                background: {COLORS['danger']};
+                color: white;
+                font-weight: 700;
+                padding: 8px 28px;
+                border-radius: 6px;
+                font-size: 13px;
+            }}
+        """)
+        msg.exec_()
 
-def procurar_objetos():
-    global caminho_arquivo1, conjuntos_objetos, global_workbook
-    
-    # Se global_workbook não foi inicializado corretamente ou precisa ser limpo para o arquivo OBJ
-    # Nota: No original, 'criar_conjuntos' reseta o workbook. 
-    # Aqui vamos usar o que foi criado lá. Removemos 'Sheet' padrão se houver.
-    if 'Sheet' in global_workbook.sheetnames:
-        del global_workbook['Sheet']
+    def _abrir_arquivo_excel(self):
+        f_obj = self.global_excel_filename_obj
+        f_dv = self.global_excel_filename_distvel
 
-    for primeiro_objeto, segundo_objeto, primeiro_obj, segundo_obj in conjuntos_objetos:
-        procurar(primeiro_objeto.get().upper(), segundo_objeto.get().upper(), primeiro_obj.get().upper(),
-                 segundo_obj.get().upper(), caminho_arquivo1, global_workbook, colunas_desejadas)
-    
-    global_workbook.save(global_excel_filename_obj)
-    root.withdraw()
-    mostrar_alerta()
+        arquivo = None
+        if os.path.exists(f_obj) and os.path.exists(f_dv):
+            t_obj = os.path.getmtime(f_obj)
+            t_dv = os.path.getmtime(f_dv)
+            arquivo = f_obj if t_obj > t_dv else f_dv
+        elif os.path.exists(f_obj):
+            arquivo = f_obj
+        elif os.path.exists(f_dv):
+            arquivo = f_dv
 
-# --- FUNÇÃO PRINCIPAL MODIFICADA ---
-def organizar_distvel():
-    global caminho_arquivo2, global_workbook
-    
-    # Reinicializa o workbook para Dist/Vel para evitar misturar com Obj se o usuário não reiniciar
-    global_workbook = openpyxl.Workbook()
-    
-    # Realiza a organização dos dados (cria as abas 1, 2, 3...)
-    organizar(caminho_arquivo2, global_workbook)
-    
-    # Remove a folha padrão "Sheet" criada pelo openpyxl.Workbook(), se ela estiver vazia/não usada
-    # E NÃO remove as abas numéricas criadas
-    if 'Sheet' in global_workbook.sheetnames:
-        del global_workbook['Sheet']
-        
-    # Salva o arquivo Excel
-    global_workbook.save(global_excel_filename_distvel)
-    
-    # Mostra a mensagem de alerta
-    mostrar_alerta()
+        if arquivo:
+            os.startfile(arquivo)
 
-def mostrar_alerta():
-    alerta = tk.Toplevel()
-    alerta.title("Alerta")
-    alerta.configure(bg="#f0f0f0")
-    alerta.geometry("400x100")
-    
-    mensagem_label = tk.Label(alerta, text="Dados filtrados com sucesso!\nVerifique o arquivo gerado.", font=("Helvetica", 12), bg="#f0f0f0")
-    mensagem_label.pack(padx=20, pady=10)
-    
-    ok_button = tk.Button(alerta, text="OK", font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", command=partial(fechar_alerta, alerta))
-    ok_button.pack(pady=5)
-    
-    alerta.resizable(False, False)
-    largura_tela = alerta.winfo_screenwidth()
-    altura_tela = alerta.winfo_screenheight()
-    x_alerta = (largura_tela - 400) / 2
-    y_alerta = (altura_tela - 100) / 2
-    alerta.geometry("+%d+%d" % (x_alerta, y_alerta))
-    alerta.protocol("WM_DELETE_WINDOW", lambda: None)
+    def _reiniciar_programa(self):
+        try:
+            python = sys.executable
+            os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
+            subprocess.Popen([python] + sys.argv)
+            QApplication.quit()
+        except Exception as e:
+            self._mostrar_erro(f"Erro ao reiniciar: {e}")
 
-def fechar_alerta(alerta):
-    alerta.destroy()
-    abrir_arquivo_excel()
 
-def abrir_arquivo_excel():
-    if os.path.exists(global_excel_filename_obj) and os.path.exists(global_excel_filename_distvel):
-        tempo_mod_obj = os.path.getmtime(global_excel_filename_obj)
-        tempo_mod_distvel = os.path.getmtime(global_excel_filename_distvel)
-        arquivo_recente = global_excel_filename_obj if tempo_mod_obj > tempo_mod_distvel else global_excel_filename_distvel
-        os.system(f'start excel "{arquivo_recente}"')
-    elif os.path.exists(global_excel_filename_obj):
-        os.system(f'start excel "{global_excel_filename_obj}"')
-    elif os.path.exists(global_excel_filename_distvel):
-        os.system(f'start excel "{global_excel_filename_distvel}"')
-    else:
-        print("Nenhum arquivo encontrado.")
-    root.quit()
+# ─── Ponto de Entrada ─────────────────────────────────────────
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
 
-def procurar_colunas(caminho_arquivo):
-    global pares_objetos, objs
-    try:
-        df = pd.read_excel(caminho_arquivo, header=6)
-        objetos = set(df['OBJECTS'].astype(str))
-        events = set(df['Events'].astype(str))
+    # Paleta dark base para Fusion
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(COLORS['bg']))
+    palette.setColor(QPalette.WindowText, QColor(COLORS['text']))
+    palette.setColor(QPalette.Base, QColor(COLORS['input_bg']))
+    palette.setColor(QPalette.AlternateBase, QColor(COLORS['card']))
+    palette.setColor(QPalette.ToolTipBase, QColor(COLORS['card']))
+    palette.setColor(QPalette.ToolTipText, QColor(COLORS['text']))
+    palette.setColor(QPalette.Text, QColor(COLORS['text']))
+    palette.setColor(QPalette.Button, QColor(COLORS['card']))
+    palette.setColor(QPalette.ButtonText, QColor(COLORS['text']))
+    palette.setColor(QPalette.Highlight, QColor(COLORS['accent']))
+    palette.setColor(QPalette.HighlightedText, QColor("#0a0a1a"))
+    app.setPalette(palette)
 
-        pares_objetos.clear()
-        for objeto in objetos:
-            if objeto.strip() and objeto != 'nan':
-                pares = objeto.split(' & ')
-                pares_objetos.update(pares)
-        
-        objs.clear()
-        for event in events:
-            if "OBJ" in event:
-                try:
-                    obj = event.split("OBJ")[1].split()[0]
-                    objs.add(obj)
-                except IndexError:
-                    pass
-        
-    except Exception as e:
-        print(f"Erro ao abrir o arquivo Excel para leitura de objetos: {e}")
+    app.setStyleSheet(GLOBAL_STYLESHEET)
 
-def atualizar_rotulos():
-    global pares_objetos, objs
-    if caminho_arquivo1:
-        procurar_colunas(caminho_arquivo1)
-        texto_pares = f"Pares de Objetos: {', '.join(sorted(pares_objetos))}"
-        texto_objs = f"OBJs: {', '.join(sorted(objs))}"
-        pares_objetos_var.set(texto_pares)
-        objs_var.set(texto_objs)
-
-# --- Construção da GUI ---
-
-root = tk.Tk()
-root.title("AUTOMATIZADO")
-largura_tela = root.winfo_screenwidth()
-altura_tela = root.winfo_screenheight()
-
-pesquisa_frame = tk.Frame(root)
-pesquisa_frame.grid(row=0, column=0, columnspan=2, pady=10)
-
-pesquisar1_button = tk.Button(pesquisa_frame, text="Pesquisar Arquivo (OBJ)", font=("Helvetica", 10, "bold"), bg="#4CAF50", fg="white", command=pesquisar_arquivo1)
-pesquisar1_button.grid(row=0, column=0, padx=10, pady=5)
-
-pesquisar2_button = tk.Button(pesquisa_frame, text="Pesquisar Arquivo (DIST/VEL)", font=("Helvetica", 10, "bold"), bg="#4CAF50", fg="white", command=pesquisar_arquivo2)
-pesquisar2_button.grid(row=0, column=1, padx=10, pady=5)
-
-caminho_entry1 = tk.Entry(root, width=50, **entry_label_style)
-caminho_entry1.grid(row=1, column=1, padx=(0, 5), pady=5)
-limpar1_button = tk.Button(root, text="x", font=("Arial", 10, "bold"), fg="red", bd=0, highlightthickness=0, command=limpar_entry1)
-limpar1_button.grid(row=1, column=0, sticky="e", padx=(5, 2), pady=5)
-
-caminho_entry2 = tk.Entry(root, width=50, **entry_label_style)
-caminho_entry2.grid(row=2, column=1, padx=(0, 5), pady=5)
-limpar2_button = tk.Button(root, text="x", font=("Arial", 10, "bold"), fg="red", bd=0, highlightthickness=0, command=limpar_entry2)
-limpar2_button.grid(row=2, column=0, sticky="e", padx=(5, 2), pady=5)
-
-criar_conjuntos_frame = tk.Frame(root)
-criar_conjuntos_frame.grid(row=3, column=0, columnspan=2, pady=10)
-
-quantidade_label = tk.Label(criar_conjuntos_frame, text="Quantidade de conjuntos:", font=("Helvetica", 10, "bold"))
-quantidade_label.grid(row=0, column=0, padx=5)
-
-quantidade_entry = tk.Entry(criar_conjuntos_frame, width=15, **entry_label_style)
-quantidade_entry.grid(row=0, column=1, padx=5)
-quantidade_entry.bind("<KeyRelease>", validar_quantidade_entry)
-
-criar_button = tk.Button(criar_conjuntos_frame, text="Criar Conjuntos", font=("Helvetica", 10, "bold"), bg="#4CAF50", fg="white", command=criar_conjuntos, state="disabled")
-criar_button.grid(row=0, column=2, padx=5)
-
-atualizar_rotulos_button = tk.Button(criar_conjuntos_frame, text="Ver objetos", font=("Helvetica", 10, "bold"), bg="#4CAF50", fg="white", command=atualizar_rotulos)
-atualizar_rotulos_button.grid(row=1, column=2, padx=5, pady=5)
-
-pares_objetos_var = tk.StringVar()
-pares_objetos_value_label = tk.Label(criar_conjuntos_frame, textvariable=pares_objetos_var, font=("Helvetica", 10), wraplength=500, justify="left")
-pares_objetos_value_label.grid(row=3, column=0, columnspan=3, padx=10, pady=(0, 5), sticky="w")
-
-objs_var = tk.StringVar()
-objs_value_label = tk.Label(criar_conjuntos_frame, textvariable=objs_var, font=("Helvetica", 10), wraplength=500, justify="left")
-objs_value_label.grid(row=4, column=1, columnspan=2, pady=(0, 5), sticky="w")
-
-limite_label = tk.Label(criar_conjuntos_frame, text="", fg="red")
-limite_label.grid(row=1, columnspan=3, pady=(5, 0))
-
-conjuntos_scroll_frame = tk.Frame(root)
-conjuntos_scroll_frame.grid(row=4, column=0, columnspan=2, pady=10)
-
-conjuntos_canvas = tk.Canvas(conjuntos_scroll_frame, bg="#E0E0E0")
-conjuntos_canvas.pack(side="left", fill="both", expand=True)
-
-scrollbar = tk.Scrollbar(conjuntos_scroll_frame, orient="vertical", command=conjuntos_canvas.yview)
-scrollbar.pack(side="right", fill="y")
-
-conjuntos_frame = tk.Frame(conjuntos_canvas, bg="#E0E0E0")
-conjuntos_frame.grid(row=0, column=0, sticky="nsew")
-conjuntos_canvas.create_window((0, 0), window=conjuntos_frame, anchor="nw")
-
-procurar_button_frame = tk.Frame(root)
-procurar_button_frame.grid(row=5, column=0, columnspan=2, pady=10)
-
-procurar_button1 = tk.Button(procurar_button_frame, text="Procurar Objetos", font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", command=procurar_objetos, state="disabled")
-procurar_button1.pack(side="left", padx=10)
-
-procurar_button2 = tk.Button(procurar_button_frame, text="Organizar Dist/Vel", font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", command=organizar_distvel, state="disabled")
-procurar_button2.pack(side="left", padx=10)
-
-reiniciar_button = tk.Button(procurar_button_frame, text="Reiniciar", font=("Helvetica", 10, "bold"), bg="#4CAF50", fg="white", command=reiniciar_programa)
-reiniciar_button.pack(side="left", padx=10)
-
-root.resizable(False, False)
-root.update_idletasks()
-x_root = (largura_tela - root.winfo_width()) / 2
-y_root = (altura_tela - root.winfo_height()) / 2
-root.geometry("+%d+%d" % (x_root, y_root))
-
-try:
-    caminho_icone = "memorylab.ico"
-    if os.path.exists(caminho_icone):
-        icone = Image.open(caminho_icone)
-        icone_tk = ImageTk.PhotoImage(icone)
-        root.iconphoto(True, icone_tk)
-except Exception:
-    pass
-
-root.mainloop()
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
