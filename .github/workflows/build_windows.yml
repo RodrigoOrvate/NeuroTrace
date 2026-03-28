@@ -34,7 +34,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install PyQt5 pandas openpyxl requests pyinstaller
-          python -c "from PyQt5.QtWidgets import QApplication; print('✅ PyQt5 OK')"
+          python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 OK')"
 
       # ─── 4. Gerar .exe com PyInstaller ───
       - name: Gerar .exe com PyInstaller
@@ -48,21 +48,21 @@ jobs:
             Write-Error "ERRO: Falha ao criar o .exe"
             exit 1
           }
-          Write-Host "✅ .exe criado com sucesso"
+          Write-Host "exe criado com sucesso"
           Get-ChildItem dist\
 
       # ─── 6. Instalar Inno Setup ───
       - name: Instalar Inno Setup 6
         run: |
           choco install innosetup --yes
-          echo "✅ Inno Setup instalado"
+          echo "Inno Setup instalado"
 
       # ─── 7. Gerar instalador com Inno Setup ───
       - name: Gerar instalador Setup.exe
         run: |
           New-Item -ItemType Directory -Force -Path installer_output
           & "C:\Program Files (x86)\Inno Setup 6\Compil32.exe" /cc packaging\installer.iss
-          Write-Host "✅ Instalador gerado"
+          Write-Host "Instalador gerado"
           Get-ChildItem installer_output\
 
       # ─── 8. Upload do Setup.exe como artefato ───
