@@ -6,10 +6,7 @@
 name: Build Windows EXE
 
 on:
-  # Disparar manualmente pelo GitHub (botão "Run workflow")
   workflow_dispatch:
-
-  # Disparar automaticamente ao criar uma release
   release:
     types: [created]
 
@@ -18,30 +15,25 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # ─── 1. Checkout do código ───
-      - name: Checkout do repositório
+      - name: Checkout do repositorio
         uses: actions/checkout@v4
 
-      # ─── 2. Configurar Python ───
       - name: Configurar Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      # ─── 3. Instalar dependências ───
-      - name: Instalar dependências Python
+      - name: Instalar dependencias Python
         run: |
           python -m pip install --upgrade pip
           pip install PyQt5 pandas openpyxl requests pyinstaller
           python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 OK')"
 
-      # ─── 4. Gerar .exe com PyInstaller ───
       - name: Gerar .exe com PyInstaller
         run: |
           python -m PyInstaller packaging/main.spec --clean --noconfirm
 
-      # ─── 5. Verificar se o .exe foi criado ───
       - name: Verificar .exe
         run: |
           if (-not (Test-Path "dist\NeuroTrace.exe")) {
@@ -51,21 +43,16 @@ jobs:
           Write-Host "exe criado com sucesso"
           Get-ChildItem dist\
 
-      # ─── 6. Instalar Inno Setup ───
       - name: Instalar Inno Setup 6
         run: |
           choco install innosetup --yes
-          echo "Inno Setup instalado"
 
-      # ─── 7. Gerar instalador com Inno Setup ───
       - name: Gerar instalador Setup.exe
         run: |
           New-Item -ItemType Directory -Force -Path installer_output
           & "C:\Program Files (x86)\Inno Setup 6\Compil32.exe" /cc packaging\installer.iss
-          Write-Host "Instalador gerado"
           Get-ChildItem installer_output\
 
-      # ─── 8. Upload do Setup.exe como artefato ───
       - name: Upload Setup como artefato
         uses: actions/upload-artifact@v4
         with:
@@ -73,8 +60,14 @@ jobs:
           path: installer_output/*.exe
           retention-days: 90
 
-      # ─── 9. Anexar à Release (se disparado por release) ───
-      - name: Anexar Setup à Release
+      - name: Upload EXE portatil como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeuroTrace_Windows_Portable
+          path: dist/NeuroTrace.exe
+          retention-days: 90
+
+      - name: Anexar arquivos a Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
