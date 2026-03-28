@@ -3,7 +3,6 @@ import os
 import platform
 import subprocess
 from functools import partial
-
 import pandas as pd
 import openpyxl
 from qt_compat import (
@@ -18,8 +17,10 @@ from qt_compat import (
 # Importando as funções de processamento (inalteradas)
 from procurar_objeto import procurar
 from procurar_distvel import organizar
-from updater import check_for_updates, CURRENT_VERSION
-
+from updater import (
+    check_for_updates, check_whats_new, check_internet,
+    CURRENT_VERSION, GITHUB_REPO_URL, _open_url,
+)
 
 def resource_path(relative_path: str) -> str:
     """Resolve caminho de recurso para PyInstaller bundle ou dev."""
@@ -53,17 +54,14 @@ GLOBAL_STYLESHEET = f"""
 QMainWindow {{
     background-color: {COLORS['bg']};
 }}
-
 QWidget {{
     color: {COLORS['text']};
     font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
 }}
-
 QLabel {{
     color: {COLORS['text']};
     background: transparent;
 }}
-
 QLineEdit {{
     background-color: {COLORS['input_bg']};
     border: 1.5px solid {COLORS['input_border']};
@@ -73,18 +71,15 @@ QLineEdit {{
     font-size: 13px;
     selection-background-color: {COLORS['accent']};
 }}
-
 QLineEdit:focus {{
     border-color: {COLORS['input_focus']};
     background-color: #14142e;
 }}
-
 QLineEdit:read-only {{
     background-color: {COLORS['surface']};
     border-color: {COLORS['card_border']};
     color: {COLORS['text_muted']};
 }}
-
 QSpinBox {{
     background-color: {COLORS['input_bg']};
     border: 1.5px solid {COLORS['input_border']};
@@ -94,22 +89,18 @@ QSpinBox {{
     font-size: 13px;
     min-width: 80px;
 }}
-
 QSpinBox:focus {{
     border-color: {COLORS['input_focus']};
 }}
-
 QSpinBox::up-button, QSpinBox::down-button {{
     background-color: {COLORS['card']};
     border: none;
     border-radius: 4px;
     width: 20px;
 }}
-
 QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
     background-color: {COLORS['accent']};
 }}
-
 QPushButton {{
     border: none;
     border-radius: 8px;
@@ -118,37 +109,30 @@ QPushButton {{
     font-weight: 600;
     letter-spacing: 0.3px;
 }}
-
 QScrollArea {{
     border: none;
     background: transparent;
 }}
-
 QScrollBar:vertical {{
     background: {COLORS['scroll_bg']};
     width: 8px;
     border-radius: 4px;
     margin: 0;
 }}
-
 QScrollBar::handle:vertical {{
     background: {COLORS['scroll_handle']};
     min-height: 30px;
     border-radius: 4px;
 }}
-
 QScrollBar::handle:vertical:hover {{
     background: {COLORS['accent']};
 }}
-
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
 }}
-
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
     background: none;
 }}
-
 QGroupBox {{
     background-color: {COLORS['card']};
     border: 1px solid {COLORS['card_border']};
@@ -160,7 +144,6 @@ QGroupBox {{
     font-weight: 600;
     color: {COLORS['accent']};
 }}
-
 QGroupBox::title {{
     subcontrol-origin: margin;
     subcontrol-position: top left;
@@ -173,10 +156,9 @@ QGroupBox::title {{
 }}
 """
 
-
 def make_accent_button(text, icon_text=""):
     """Cria um botão com estilo accent (vermelho laboratorial)."""
-    btn = QPushButton(f"  {icon_text}  {text}  " if icon_text else f"  {text}  ")
+    btn = QPushButton(f" {icon_text} {text} " if icon_text else f" {text} ")
     btn.setStyleSheet(f"""
         QPushButton {{
             background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -208,10 +190,9 @@ def make_accent_button(text, icon_text=""):
     btn.setGraphicsEffect(shadow)
     return btn
 
-
 def make_danger_button(text, icon_text=""):
     """Cria um botão com estilo danger (vermelho)."""
-    btn = QPushButton(f"  {icon_text}  {text}  " if icon_text else f"  {text}  ")
+    btn = QPushButton(f" {icon_text} {text} " if icon_text else f" {text} ")
     btn.setStyleSheet(f"""
         QPushButton {{
             background: transparent;
@@ -231,10 +212,9 @@ def make_danger_button(text, icon_text=""):
     btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
     return btn
 
-
 def make_secondary_button(text):
     """Cria um botão secundário (outline)."""
-    btn = QPushButton(f"  {text}  ")
+    btn = QPushButton(f" {text} ")
     btn.setStyleSheet(f"""
         QPushButton {{
             background: transparent;
@@ -258,6 +238,64 @@ def make_secondary_button(text):
     btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
     return btn
 
+def make_github_button():
+    """Cria o botão do GitHub com ícone SVG embutido via pixmap."""
+    btn = QPushButton()
+    btn.setFixedSize(38, 38)
+    btn.setToolTip("Abrir repositório no GitHub")
+    btn.setCursor(Qt.PointingHandCursor)
+    btn.setStyleSheet(f"""
+        QPushButton {{
+            background: transparent;
+            border: 1.5px solid {COLORS['card_border']};
+            border-radius: 8px;
+            padding: 0px;
+            font-size: 18px;
+        }}
+        QPushButton:hover {{
+            border-color: {COLORS['text_muted']};
+            background: {COLORS['card']};
+        }}
+        QPushButton:disabled {{
+            border-color: {COLORS['card_border']};
+            opacity: 0.4;
+        }}
+    """)
+    # Usa o logo do GitHub em unicode como fallback elegante
+    btn.setText("⌥")  # será substituído abaixo
+
+    # Tenta desenhar ícone SVG do GitHub via QPixmap/QPainter
+    try:
+        from qt_compat import QPixmap, QPainter
+        # SVG simplificado do logo GitHub (Octocat simplificado como ícone)
+        github_svg = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20">
+  <path fill="#8888aa" d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385
+    .6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41
+    -.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23
+    1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925
+    0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23
+    .96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23
+    .66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925
+    .435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57
+    A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+</svg>"""
+        import tempfile as _tf, os as _os
+        tmp = _tf.NamedTemporaryFile(suffix=".svg", delete=False)
+        tmp.write(github_svg)
+        tmp.close()
+        pix = QPixmap(tmp.name)
+        _os.unlink(tmp.name)
+        if not pix.isNull():
+            btn.setIcon(QIcon(pix))
+            btn.setIconSize(QSize(20, 20))
+            btn.setText("")
+        else:
+            btn.setText("GH")
+    except Exception:
+        btn.setText("GH")
+
+    return btn
+
 
 class PlaceholderLineEdit(QLineEdit):
     """QLineEdit personalizado com placeholder que desaparece ao focar."""
@@ -268,7 +306,6 @@ class PlaceholderLineEdit(QLineEdit):
 
 class ConjuntoCard(QFrame):
     """Card visual para cada conjunto de planilha (par de objetos)."""
-
     def __init__(self, numero, parent=None):
         super().__init__(parent)
         self.numero = numero
@@ -289,23 +326,18 @@ class ConjuntoCard(QFrame):
         layout.setContentsMargins(16, 12, 16, 14)
         layout.setSpacing(10)
 
-        # Título
-        title = QLabel(f"📋  Planilha {self.numero}")
+        title = QLabel(f"📋 Planilha {self.numero}")
         title.setStyleSheet(f"""
-            font-size: 14px;
-            font-weight: 700;
-            color: {COLORS['accent']};
-            padding-bottom: 4px;
+            font-size: 14px; font-weight: 700;
+            color: {COLORS['accent']}; padding-bottom: 4px;
         """)
         layout.addWidget(title)
 
-        # Linha separadora
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setStyleSheet(f"background-color: {COLORS['card_border']}; max-height: 1px;")
         layout.addWidget(separator)
 
-        # Grid de entradas
         grid = QGridLayout()
         grid.setSpacing(8)
 
@@ -336,7 +368,6 @@ class ConjuntoCard(QFrame):
         layout.addLayout(grid)
 
     def get_values(self):
-        """Retorna os 4 valores dos entries."""
         return (
             self.objeto1_entry.text().strip(),
             self.objeto2_entry.text().strip(),
@@ -345,9 +376,7 @@ class ConjuntoCard(QFrame):
         )
 
     def all_filled(self):
-        """Verifica se todos os campos estão preenchidos."""
-        vals = self.get_values()
-        return all(v != "" for v in vals)
+        return all(v != "" for v in self.get_values())
 
 
 class MainWindow(QMainWindow):
@@ -362,9 +391,9 @@ class MainWindow(QMainWindow):
         # Estado
         self.caminho_arquivo1 = ""
         self.caminho_arquivo2 = ""
-        self.conjuntos_cards = []
-        self.global_workbook = openpyxl.Workbook()
-        self.global_excel_filename_obj = "dados_filtrados_obj.xlsx"
+        self.conjuntos_cards  = []
+        self.global_workbook  = openpyxl.Workbook()
+        self.global_excel_filename_obj    = "dados_filtrados_obj.xlsx"
         self.global_excel_filename_distvel = "dados_filtrados_distvel.xlsx"
         self.colunas_desejadas = [
             'DAY', 'ANIMAL', 'OBJECTS', 'Total Bouts',
@@ -372,7 +401,10 @@ class MainWindow(QMainWindow):
             'Ending time(Second) of First Bout'
         ]
         self.pares_objetos = set()
-        self.objs = set()
+        self.objs          = set()
+
+        # Estado de internet (atualizado periodicamente)
+        self._internet_ok = False
 
         # Ícone
         try:
@@ -389,17 +421,64 @@ class MainWindow(QMainWindow):
         self.validation_timer.timeout.connect(self._validate_buttons)
         self.validation_timer.start(300)
 
+        # Timer para checar internet a cada 10 segundos
+        self._internet_timer = QTimer(self)
+        self._internet_timer.timeout.connect(self._check_internet_status)
+        self._internet_timer.start(10_000)
+
         # Centraliza na tela
         self._center_on_screen()
 
-        # Verifica atualizações automaticamente ao iniciar (silencioso)
-        QTimer.singleShot(2000, lambda: check_for_updates(self, silent=True))
+        # Na inicialização: verifica internet, depois dispara rotinas online
+        QTimer.singleShot(500,  self._check_internet_status)
+        QTimer.singleShot(2000, self._on_startup_online_checks)
 
     def _center_on_screen(self):
         screen = QApplication.primaryScreen().geometry()
-        x = (screen.width() - self.width()) // 2
+        x = (screen.width()  - self.width())  // 2
         y = (screen.height() - self.height()) // 2
         self.move(x, y)
+
+    # ─── Verificação de Internet ───────────────────────────────
+
+    def _check_internet_status(self):
+        """Checa a conectividade em thread separada para não travar a UI."""
+        from qt_compat import QThread
+
+        class _Checker(QThread):
+            result = pyqtSignal(bool)
+            def run(self):
+                self.result.emit(check_internet())
+
+        checker = _Checker()
+        checker.result.connect(self._apply_internet_status)
+        checker.start()
+        # Mantém referência para não ser coletado pelo GC
+        self._inet_checker = checker
+
+    def _apply_internet_status(self, online: bool):
+        """Atualiza o estado de internet e habilita/desabilita botões dependentes."""
+        self._internet_ok = online
+        self.github_btn.setEnabled(online)
+        self.update_btn.setEnabled(online)
+
+        # Tooltip explicativo quando offline
+        if online:
+            self.github_btn.setToolTip("Abrir repositório no GitHub")
+            self.update_btn.setToolTip("")
+        else:
+            self.github_btn.setToolTip("Sem conexão com a internet")
+            self.update_btn.setToolTip("Sem conexão com a internet")
+
+    def _on_startup_online_checks(self):
+        """Disparado após a janela carregar: verifica atualização e novidades."""
+        if self._internet_ok:
+            # "O que há de novo" — só aparece se for primeira abertura da versão
+            check_whats_new(self)
+            # Verifica se há versão ainda mais nova disponível
+            QTimer.singleShot(500, lambda: check_for_updates(self, silent=True))
+
+    # ─── Build da UI ───────────────────────────────────────────
 
     def _build_ui(self):
         central = QWidget()
@@ -412,21 +491,16 @@ class MainWindow(QMainWindow):
         header = QLabel("NeuroTrace")
         header.setAlignment(Qt.AlignCenter)
         header.setStyleSheet(f"""
-            font-size: 26px;
-            font-weight: 800;
-            letter-spacing: 3px;
-            color: {COLORS['accent']};
-            padding: 6px 0;
+            font-size: 26px; font-weight: 800;
+            letter-spacing: 3px; color: {COLORS['accent']}; padding: 6px 0;
         """)
         main_layout.addWidget(header)
 
-        subtitle = QLabel(f"Organizador de dados Topscan  ·  v{CURRENT_VERSION}")
+        subtitle = QLabel(f"Organizador de dados Topscan · v{CURRENT_VERSION}")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet(f"""
-            font-size: 12px;
-            color: {COLORS['text_muted']};
-            letter-spacing: 1px;
-            margin-bottom: 8px;
+            font-size: 12px; color: {COLORS['text_muted']};
+            letter-spacing: 1px; margin-bottom: 8px;
         """)
         main_layout.addWidget(subtitle)
 
@@ -436,7 +510,6 @@ class MainWindow(QMainWindow):
         files_layout.setContentsMargins(14, 30, 14, 14)
         files_layout.setSpacing(10)
 
-        # Arquivo OBJ
         row1 = QHBoxLayout()
         row1.setSpacing(8)
         self.pesquisar1_btn = make_accent_button("Pesquisar Arquivo (OBJ)", "📂")
@@ -452,7 +525,6 @@ class MainWindow(QMainWindow):
         row1.addWidget(self.limpar1_btn)
         files_layout.addLayout(row1)
 
-        # Arquivo DIST/VEL
         row2 = QHBoxLayout()
         row2.setSpacing(8)
         self.pesquisar2_btn = make_accent_button("Pesquisar Arquivo (DIST/VEL)", "📂")
@@ -477,7 +549,6 @@ class MainWindow(QMainWindow):
         config_layout.setContentsMargins(14, 30, 14, 14)
         config_layout.setSpacing(12)
 
-        # Linha 1: Label + SpinBox + Criar + Ver Objetos
         config_row1 = QHBoxLayout()
         config_row1.setSpacing(12)
 
@@ -501,14 +572,13 @@ class MainWindow(QMainWindow):
 
         config_row1.addSpacing(6)
 
-        self.ver_objetos_btn = make_secondary_button("Ver Objetos  🔍")
+        self.ver_objetos_btn = make_secondary_button("Ver Objetos 🔍")
         self.ver_objetos_btn.clicked.connect(self._atualizar_rotulos)
         config_row1.addWidget(self.ver_objetos_btn)
 
         config_row1.addStretch(1)
         config_layout.addLayout(config_row1)
 
-        # Linha 2: Info dos objetos detectados
         self.pares_label = QLabel("")
         self.pares_label.setWordWrap(True)
         self.pares_label.setStyleSheet(f"font-size: 12px; color: {COLORS['text_muted']}; padding: 2px 0;")
@@ -519,7 +589,6 @@ class MainWindow(QMainWindow):
         self.objs_label.setStyleSheet(f"font-size: 12px; color: {COLORS['text_muted']}; padding: 2px 0;")
         config_layout.addWidget(self.objs_label)
 
-        # Label de limite/erro
         self.limite_label = QLabel("")
         self.limite_label.setStyleSheet(f"color: {COLORS['danger']}; font-size: 12px;")
         config_layout.addWidget(self.limite_label)
@@ -538,14 +607,12 @@ class MainWindow(QMainWindow):
                 border-radius: 10px;
             }}
         """)
-
         self.scroll_widget = QWidget()
         self.scroll_widget.setStyleSheet(f"background: {COLORS['bg']};")
         self.scroll_layout = QVBoxLayout(self.scroll_widget)
         self.scroll_layout.setContentsMargins(8, 8, 8, 8)
         self.scroll_layout.setSpacing(10)
         self.scroll_layout.addStretch()
-
         self.scroll_area.setWidget(self.scroll_widget)
         main_layout.addWidget(self.scroll_area, stretch=1)
 
@@ -573,18 +640,28 @@ class MainWindow(QMainWindow):
         self.organizar_distvel_btn.clicked.connect(self._organizar_distvel)
         action_layout.addWidget(self.organizar_distvel_btn)
 
-        self.reiniciar_btn = make_secondary_button("Reiniciar  🔄")
+        self.reiniciar_btn = make_secondary_button("Reiniciar 🔄")
         self.reiniciar_btn.clicked.connect(self._reiniciar_programa)
         action_layout.addWidget(self.reiniciar_btn)
 
-        self.update_btn = make_secondary_button("Atualizar  🔄")
+        # Botão Atualizar — dependente de internet
+        self.update_btn = make_secondary_button("Atualizar 🔄")
+        self.update_btn.setEnabled(False)  # começa desabilitado até confirmar internet
         self.update_btn.clicked.connect(self._check_updates_manual)
         action_layout.addWidget(self.update_btn)
 
         action_layout.addStretch()
+
+        # Botão GitHub — dependente de internet
+        self.github_btn = make_github_button()
+        self.github_btn.setEnabled(False)  # começa desabilitado até confirmar internet
+        self.github_btn.clicked.connect(self._open_github)
+        action_layout.addWidget(self.github_btn)
+
         main_layout.addWidget(action_frame)
 
     # ─── Ações de Arquivo ──────────────────────────────────────
+
     def _pesquisar_arquivo1(self):
         filename, _ = QFileDialog.getOpenFileName(
             self, "Selecionar Arquivo (OBJ)", "",
@@ -617,23 +694,20 @@ class MainWindow(QMainWindow):
         self.caminho_entry2.clear()
 
     # ─── Gerenciamento de Conjuntos ────────────────────────────
+
     def _criar_conjuntos(self):
         num = self.quantidade_spin.value()
-
         if num == 0:
-            self.limite_label.setText("⚠  Mínimo de planilhas é 1.")
+            self.limite_label.setText("⚠ Mínimo de planilhas é 1.")
             return
         if num > 100:
-            self.limite_label.setText("⚠  Limite máximo de 100 planilhas.")
+            self.limite_label.setText("⚠ Limite máximo de 100 planilhas.")
             return
         self.limite_label.setText("")
-
         self._clear_conjuntos()
         self.global_workbook = openpyxl.Workbook()
-
         for i in range(1, num + 1):
             card = ConjuntoCard(i)
-            # Insere antes do stretch final
             self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, card)
             self.conjuntos_cards.append(card)
 
@@ -644,26 +718,25 @@ class MainWindow(QMainWindow):
         self.conjuntos_cards.clear()
 
     # ─── Validação de Botões ───────────────────────────────────
+
     def _validate_buttons(self):
-        # Criar Conjuntos: habilitado se arquivo1 carregado
         self.criar_btn.setEnabled(bool(self.caminho_arquivo1))
 
-        # Procurar Objetos: habilitado se arquivo1 e todos os cards preenchidos
         can_search_obj = (
             bool(self.caminho_arquivo1)
             and len(self.conjuntos_cards) > 0
             and all(card.all_filled() for card in self.conjuntos_cards)
         )
         self.procurar_obj_btn.setEnabled(can_search_obj)
-
-        # Organizar Dist/Vel: habilitado se arquivo2 carregado
         self.organizar_distvel_btn.setEnabled(bool(self.caminho_arquivo2))
 
+        # Botões dependentes de internet são controlados por _apply_internet_status
+
     # ─── Processamento ─────────────────────────────────────────
+
     def _procurar_objetos(self):
         if 'Sheet' in self.global_workbook.sheetnames:
             del self.global_workbook['Sheet']
-
         try:
             for card in self.conjuntos_cards:
                 obj1, obj2, o1, o2 = card.get_values()
@@ -678,24 +751,22 @@ class MainWindow(QMainWindow):
 
     def _organizar_distvel(self):
         self.global_workbook = openpyxl.Workbook()
-
         try:
             organizar(self.caminho_arquivo2, self.global_workbook)
-
             if 'Sheet' in self.global_workbook.sheetnames:
                 del self.global_workbook['Sheet']
-
             self.global_workbook.save(self.global_excel_filename_distvel)
             self._mostrar_sucesso()
         except Exception as e:
             self._mostrar_erro(f"Erro ao organizar Dist/Vel:\n{str(e)}")
 
     # ─── Leitura de Objetos ────────────────────────────────────
+
     def _procurar_colunas(self, caminho):
         try:
-            df = pd.read_excel(caminho, header=6)
+            df      = pd.read_excel(caminho, header=6)
             objetos = set(df['OBJECTS'].astype(str))
-            events = set(df['Events'].astype(str))
+            events  = set(df['Events'].astype(str))
 
             self.pares_objetos.clear()
             for obj in objetos:
@@ -719,7 +790,7 @@ class MainWindow(QMainWindow):
         if self.caminho_arquivo1:
             self._procurar_colunas(self.caminho_arquivo1)
             pares_text = ', '.join(sorted(self.pares_objetos))
-            objs_text = ', '.join(sorted(self.objs))
+            objs_text  = ', '.join(sorted(self.objs))
             self.pares_label.setText(f"🔹 Pares de Objetos: {pares_text}" if pares_text else "Nenhum par encontrado.")
             self.objs_label.setText(f"🔹 OBJs: {objs_text}" if objs_text else "Nenhum OBJ encontrado.")
         else:
@@ -727,30 +798,20 @@ class MainWindow(QMainWindow):
             self.objs_label.setText("")
 
     # ─── Diálogos ──────────────────────────────────────────────
+
     def _mostrar_sucesso(self):
         msg = QMessageBox(self)
         msg.setWindowTitle("Sucesso")
-        msg.setText("✅  Dados filtrados com sucesso!\nVerifique o arquivo gerado.")
+        msg.setText("✅ Dados filtrados com sucesso!\nVerifique o arquivo gerado.")
         msg.setStyleSheet(f"""
-            QMessageBox {{
-                background-color: {COLORS['card']};
-            }}
-            QMessageBox QLabel {{
-                color: {COLORS['text']};
-                font-size: 14px;
-                padding: 12px;
-            }}
+            QMessageBox {{ background-color: {COLORS['card']}; }}
+            QMessageBox QLabel {{ color: {COLORS['text']}; font-size: 14px; padding: 12px; }}
             QPushButton {{
-                background: {COLORS['accent']};
-                color: #0a0a1a;
-                font-weight: 700;
-                padding: 8px 28px;
-                border-radius: 6px;
-                font-size: 13px;
+                background: {COLORS['accent']}; color: #0a0a1a;
+                font-weight: 700; padding: 8px 28px;
+                border-radius: 6px; font-size: 13px;
             }}
-            QPushButton:hover {{
-                background: {COLORS['accent_hover']};
-            }}
+            QPushButton:hover {{ background: {COLORS['accent_hover']}; }}
         """)
         msg.exec_()
         self._abrir_arquivo_excel()
@@ -761,45 +822,31 @@ class MainWindow(QMainWindow):
         msg.setIcon(QMessageBox.Warning)
         msg.setText(mensagem)
         msg.setStyleSheet(f"""
-            QMessageBox {{
-                background-color: {COLORS['card']};
-            }}
-            QMessageBox QLabel {{
-                color: {COLORS['text']};
-                font-size: 13px;
-                padding: 10px;
-            }}
+            QMessageBox {{ background-color: {COLORS['card']}; }}
+            QMessageBox QLabel {{ color: {COLORS['text']}; font-size: 13px; padding: 10px; }}
             QPushButton {{
-                background: {COLORS['danger']};
-                color: white;
-                font-weight: 700;
-                padding: 8px 28px;
-                border-radius: 6px;
-                font-size: 13px;
+                background: {COLORS['danger']}; color: white;
+                font-weight: 700; padding: 8px 28px;
+                border-radius: 6px; font-size: 13px;
             }}
         """)
         msg.exec_()
 
     def _abrir_arquivo_excel(self):
         f_obj = self.global_excel_filename_obj
-        f_dv = self.global_excel_filename_distvel
-
+        f_dv  = self.global_excel_filename_distvel
         arquivo = None
         if os.path.exists(f_obj) and os.path.exists(f_dv):
-            t_obj = os.path.getmtime(f_obj)
-            t_dv = os.path.getmtime(f_dv)
-            arquivo = f_obj if t_obj > t_dv else f_dv
+            arquivo = f_obj if os.path.getmtime(f_obj) > os.path.getmtime(f_dv) else f_dv
         elif os.path.exists(f_obj):
             arquivo = f_obj
         elif os.path.exists(f_dv):
             arquivo = f_dv
-
         if arquivo:
             self._open_file_crossplatform(arquivo)
 
     @staticmethod
     def _open_file_crossplatform(filepath: str):
-        """Abre arquivo com o programa padrão do sistema (cross-platform)."""
         try:
             if sys.platform == 'win32':
                 os.startfile(filepath)
@@ -813,10 +860,8 @@ class MainWindow(QMainWindow):
     def _reiniciar_programa(self):
         try:
             if getattr(sys, 'frozen', False):
-                # Rodando como executável empacotado
                 subprocess.Popen([sys.executable])
             else:
-                # Rodando como script Python
                 python = sys.executable
                 os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
                 subprocess.Popen([python] + sys.argv)
@@ -828,27 +873,29 @@ class MainWindow(QMainWindow):
         """Verifica atualizações manualmente (mostra resultado ao usuário)."""
         check_for_updates(self, silent=False)
 
+    def _open_github(self):
+        """Abre o repositório do GitHub no navegador padrão."""
+        _open_url(GITHUB_REPO_URL)
+
 
 # ─── Ponto de Entrada ─────────────────────────────────────────
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    # Paleta dark base para Fusion
     palette = QPalette()
-    palette.setColor(QPalette.Window, QColor(COLORS['bg']))
-    palette.setColor(QPalette.WindowText, QColor(COLORS['text']))
-    palette.setColor(QPalette.Base, QColor(COLORS['input_bg']))
-    palette.setColor(QPalette.AlternateBase, QColor(COLORS['card']))
-    palette.setColor(QPalette.ToolTipBase, QColor(COLORS['card']))
-    palette.setColor(QPalette.ToolTipText, QColor(COLORS['text']))
-    palette.setColor(QPalette.Text, QColor(COLORS['text']))
-    palette.setColor(QPalette.Button, QColor(COLORS['card']))
-    palette.setColor(QPalette.ButtonText, QColor(COLORS['text']))
-    palette.setColor(QPalette.Highlight, QColor(COLORS['accent']))
+    palette.setColor(QPalette.Window,          QColor(COLORS['bg']))
+    palette.setColor(QPalette.WindowText,      QColor(COLORS['text']))
+    palette.setColor(QPalette.Base,            QColor(COLORS['input_bg']))
+    palette.setColor(QPalette.AlternateBase,   QColor(COLORS['card']))
+    palette.setColor(QPalette.ToolTipBase,     QColor(COLORS['card']))
+    palette.setColor(QPalette.ToolTipText,     QColor(COLORS['text']))
+    palette.setColor(QPalette.Text,            QColor(COLORS['text']))
+    palette.setColor(QPalette.Button,          QColor(COLORS['card']))
+    palette.setColor(QPalette.ButtonText,      QColor(COLORS['text']))
+    palette.setColor(QPalette.Highlight,       QColor(COLORS['accent']))
     palette.setColor(QPalette.HighlightedText, QColor("#0a0a1a"))
     app.setPalette(palette)
-
     app.setStyleSheet(GLOBAL_STYLESHEET)
 
     window = MainWindow()
