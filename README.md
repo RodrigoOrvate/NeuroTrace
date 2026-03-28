@@ -24,6 +24,8 @@
 
 O **NeuroTrace** é uma ferramenta desktop desenvolvida para automatizar a organização e filtragem de dados gerados pelo software **Topscan**, amplamente utilizado em pesquisas de comportamento animal em laboratórios de neurociência.
 
+> **Compatível com Windows e macOS** — usa PyQt5 (Windows) e PySide6 (macOS) através de camada de compatibilidade automática.
+
 ### O que o programa faz?
 
 - **Procurar Objetos (OBJ):** Filtra e organiza os dados de reconhecimento de objetos a partir de planilhas do Topscan, separando por pares de objetos e gerando uma planilha formatada.
@@ -72,8 +74,8 @@ Se preferir não instalar, pode usar o executável diretamente.
 Se o `.dmg` não estiver disponível, você pode rodar diretamente com Python:
 
 ```bash
-# Instalar dependências
-pip3 install PyQt5 pandas openpyxl
+# Instalar dependências (PySide6 funciona em ambas as plataformas)
+pip3 install PySide6 pandas openpyxl
 
 # Executar
 python3 main.py
@@ -120,7 +122,9 @@ Você também pode verificar manualmente clicando no botão **"Atualizar 🔄"**
 - Dependências:
 
 ```bash
-pip install PyQt5 pandas openpyxl pyinstaller
+pip install PyQt5 pandas openpyxl pyinstaller  # Windows
+# ou
+pip install PySide6 pandas openpyxl pyinstaller  # macOS / multiplataforma
 ```
 
 ### Executar em modo desenvolvimento
@@ -156,11 +160,16 @@ O `.app` será gerado em `dist/NeuroTrace.app` e o `.dmg` em `installer_output/`
 
 ```
 NeuroTrace/
-├── main.py                 # Interface principal (PyQt5)
+├── .github/workflows/      # CI/CD para build macOS
+│   └── build_macos.yml     # GitHub Actions — gera o .dmg
+│
+├── main.py                 # Interface principal (Qt)
+├── qt_compat.py            # Compatibilidade PyQt5/PySide6
 ├── procurar_objeto.py      # Lógica de filtragem de objetos
 ├── procurar_distvel.py     # Lógica de organização dist/vel
 ├── updater.py              # Auto-atualização via GitHub Releases
 ├── memorylab.ico           # Ícone do aplicativo
+├── requirements.txt        # Dependências por plataforma
 │
 ├── packaging/              # Scripts de build e empacotamento
 │   ├── main.spec           # PyInstaller spec — Windows
