@@ -218,6 +218,8 @@ class CheckUpdateThread(QThread):
             if mac_zip: return mac_zip, "mac_zip"
             return "", ""
         else:
+            if win_installer and win_standalone:
+                return f"{win_installer}|{win_standalone}", "win_choice"
             if win_installer:  return win_installer,  "win_installer"
             if win_standalone: return win_standalone, "win_standalone"
             return "", ""
@@ -379,8 +381,16 @@ class UpdateDialog(QDialog):
     def __init__(self, version: str, notes: str, download_data: str, parent=None):
         super().__init__(parent)
         parts = download_data.rsplit("|", 1)
-        self.download_url = parts[0]
         self.asset_type   = parts[1] if len(parts) > 1 else ""
+        if self.asset_type == "win_choice":
+            url_parts = parts[0].split("|")
+            self.download_url_setup = url_parts[0]
+            self.download_url_port  = url_parts[1]
+            self.download_url = ""
+        else:
+            self.download_url = parts[0]
+            self.download_url_setup = ""
+            self.download_url_port  = ""
         self.version      = version
         self.download_thread = None
         self._setup_ui(version, notes)
@@ -508,10 +518,45 @@ class UpdateDialog(QDialog):
             }}
         """)
         self.update_btn.setCursor(Qt.PointingHandCursor)
-        self.update_btn.clicked.connect(self._start_download)
+
+        if self.asset_type == "win_choice":
+            self.update_btn.setText("⬇ Atualizar (Completo)")
+            self.update_btn.clicked.connect(lambda: self._start_download_choice("win_installer"))
+            
+            self.port_btn = QPushButton("⬇ Apenas Portátil")
+            self.port_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {COLORS['card']}; color: {COLORS['text']};
+                    border: 1.5px solid {COLORS['accent']};
+                    font-weight: 600; font-size: 13px;
+                    padding: 10px 22px; border-radius: 8px;
+                }}
+                QPushButton:hover {{
+                    background: {COLORS['accent']}; color: #ffffff;
+                }}
+                QPushButton:disabled {{
+                    background: {COLORS['card_border']}; color: {COLORS['text_muted']}; border: none;
+                }}
+            """)
+            self.port_btn.setCursor(Qt.PointingHandCursor)
+            self.port_btn.clicked.connect(lambda: self._start_download_choice("win_standalone"))
+            btn_layout.addWidget(self.port_btn)
+        else:
+            self.update_btn.clicked.connect(self._start_download)
+
         btn_layout.addWidget(self.update_btn)
 
         layout.addLayout(btn_layout)
+
+    def _start_download_choice(self, chosen_type):
+        if chosen_type == "win_installer":
+            self.download_url = self.download_url_setup
+        else:
+            self.download_url = self.download_url_port
+        self.asset_type = chosen_type
+        if hasattr(self, 'port_btn'):
+            self.port_btn.setEnabled(False)
+        self._start_download()
 
     def _start_download(self):
         self.update_btn.setEnabled(False)
