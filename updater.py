@@ -18,12 +18,12 @@ import shutil
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
-from PyQt5.QtWidgets import (
+from qt_compat import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QProgressBar, QMessageBox, QSizePolicy
+    QPushButton, QProgressBar, QMessageBox, QSizePolicy,
+    Qt, QThread, pyqtSignal, QTimer,
+    QColor, QApplication,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QColor
 
 # ─── Configuração ─────────────────────────────────────────────
 GITHUB_OWNER = "RodrigoOrvate"
@@ -423,7 +423,6 @@ class UpdateDialog(QDialog):
         except Exception:
             subprocess.Popen([installer_path])
 
-        from PyQt5.QtWidgets import QApplication
         QApplication.quit()
 
     # ─── Windows: Standalone .exe ────────────────────────────
@@ -467,7 +466,6 @@ del /f "%~f0"
             creationflags=subprocess.CREATE_NO_WINDOW
         )
 
-        from PyQt5.QtWidgets import QApplication
         QApplication.quit()
 
     # ─── macOS: .dmg ─────────────────────────────────────────
@@ -527,7 +525,6 @@ rm -f "$0"
 
         subprocess.Popen(["bash", script_path])
 
-        from PyQt5.QtWidgets import QApplication
         QApplication.quit()
 
     # ─── macOS: .zip contendo .app ───────────────────────────
@@ -585,7 +582,6 @@ rm -f "$0"
 
         subprocess.Popen(["bash", script_path])
 
-        from PyQt5.QtWidgets import QApplication
         QApplication.quit()
 
 

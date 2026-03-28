@@ -9,6 +9,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(ROOT, 'memorylab.ico'), '.'),
+        (os.path.join(ROOT, 'qt_compat.py'), '.'),
         (os.path.join(ROOT, 'procurar_objeto.py'), '.'),
         (os.path.join(ROOT, 'procurar_distvel.py'), '.'),
         (os.path.join(ROOT, 'updater.py'), '.'),

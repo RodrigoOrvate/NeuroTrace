@@ -34,29 +34,10 @@ jobs:
       - name: Instalar dependências Python
         run: |
           python -m pip install --upgrade pip
-          # Instalar PyQt5 via Homebrew (suporte ARM nativo)
-          brew install pyqt@5
-          # Linkar o PyQt5 do Homebrew no Python do setup-python
-          PYQT5_PATH=$(brew --prefix pyqt@5)/lib/python3.11/site-packages
-          if [ -d "$PYQT5_PATH" ]; then
-            cp -R "$PYQT5_PATH"/PyQt5* "$(python -c 'import site; print(site.getsitepackages()[0])')/"
-            cp -R "$PYQT5_PATH"/sip* "$(python -c 'import site; print(site.getsitepackages()[0])')/" 2>/dev/null || true
-          else
-            # Fallback: encontrar path real do Homebrew
-            BREW_PYQT=$(find $(brew --prefix)/lib -path "*/site-packages/PyQt5" -type d 2>/dev/null | head -1)
-            if [ -n "$BREW_PYQT" ]; then
-              SITE_DIR=$(python -c 'import site; print(site.getsitepackages()[0])')
-              cp -R "$(dirname "$BREW_PYQT")"/PyQt5* "$SITE_DIR/"
-              cp -R "$(dirname "$BREW_PYQT")"/sip* "$SITE_DIR/" 2>/dev/null || true
-            else
-              echo "AVISO: PyQt5 do Homebrew não encontrado, tentando pip..."
-              pip install PyQt5
-            fi
-          fi
-          # Instalar o resto das dependências (exceto PyQt5)
-          pip install pandas openpyxl requests pyinstaller
-          # Verificar se PyQt5 importa corretamente
-          python -c "from PyQt5.QtWidgets import QApplication; print('✅ PyQt5 OK')"
+          # PySide6 tem suporte nativo a macOS ARM (ao contrário de PyQt5)
+          pip install PySide6 pandas openpyxl requests pyinstaller
+          # Verificar se PySide6 importa corretamente
+          python -c "from PySide6.QtWidgets import QApplication; print('✅ PySide6 OK')"
 
       # ─── 4. Converter ícone .ico para .icns (macOS) ───
       - name: Converter ícone para .icns

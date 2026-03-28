@@ -6,14 +6,14 @@ from functools import partial
 
 import pandas as pd
 import openpyxl
-from PyQt5.QtWidgets import (
+from qt_compat import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit, QScrollArea, QFrame, QFileDialog,
     QMessageBox, QGraphicsDropShadowEffect, QSpinBox, QSizePolicy,
-    QGroupBox, QGridLayout, QSpacerItem
+    QGroupBox, QGridLayout, QSpacerItem,
+    Qt, QPropertyAnimation, QEasingCurve, QSize, pyqtSignal, QTimer,
+    QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap,
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QSize, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap
 
 # Importando as funções de processamento (inalteradas)
 from procurar_objeto import procurar
