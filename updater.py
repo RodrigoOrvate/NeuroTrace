@@ -69,11 +69,16 @@ def is_frozen() -> bool:
 
 
 def _get_version_file_path() -> str:
-    """Retorna o caminho do arquivo que guarda a última versão vista."""
-    if is_frozen():
-        base = os.path.dirname(sys.executable)
+    """Retorna o caminho do arquivo que guarda a última versão vista.
+    Usa o diretório de dados do usuário para garantir permissão de escrita."""
+    if IS_WINDOWS:
+        base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "NeuroTrace")
+    elif IS_MACOS:
+        base = os.path.expanduser("~/Library/Application Support/NeuroTrace")
     else:
-        base = os.path.dirname(os.path.abspath(__file__))
+        base = os.path.expanduser("~/.config/NeuroTrace")
+
+    os.makedirs(base, exist_ok=True)
     return os.path.join(base, "last_seen_version.txt")
 
 
