@@ -31,7 +31,7 @@ GITHUB_OWNER = "RodrigoOrvate"
 GITHUB_REPO  = "NeuroTrace"
 GITHUB_API_URL  = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 GITHUB_REPO_URL = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
-CURRENT_VERSION = "2.0.1"
+CURRENT_VERSION = "2.0.0"
 
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS   = sys.platform == "darwin"
@@ -144,6 +144,10 @@ class DownloadThread(QThread):
                         if total_size > 0:
                             pct = int((downloaded / total_size) * 100)
                             self.progress.emit(pct)
+
+                if total_size > 0 and downloaded < total_size:
+                    raise Exception(f"Download incompleto: a conexão pode ter caído ({downloaded}/{total_size} bytes).")
+
             self.finished.emit(self.dest_path)
         except Exception as e:
             self.error.emit(str(e))

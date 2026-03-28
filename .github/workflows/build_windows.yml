@@ -50,8 +50,8 @@ jobs:
       - name: Gerar instalador Setup.exe
         run: |
           New-Item -ItemType Directory -Force -Path installer_output
-          & "C:\Program Files (x86)\Inno Setup 6\Compil32.exe" /cc packaging\installer.iss
-          Get-ChildItem installer_output\
+          iscc packaging\installer.iss
+          Get-ChildItem -Path installer_output\
 
       - name: Upload Setup como artefato
         uses: actions/upload-artifact@v4
