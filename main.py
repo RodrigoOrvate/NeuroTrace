@@ -17,6 +17,13 @@ from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap
 # Importando as funções de processamento (inalteradas)
 from procurar_objeto import procurar
 from procurar_distvel import organizar
+from updater import check_for_updates, CURRENT_VERSION
+
+
+def resource_path(relative_path: str) -> str:
+    """Resolve caminho de recurso para PyInstaller bundle ou dev."""
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative_path)
 
 # ─── Paleta de Cores ───────────────────────────────────────────
 COLORS = {
@@ -368,7 +375,7 @@ class MainWindow(QMainWindow):
 
         # Ícone
         try:
-            caminho_icone = os.path.join(os.path.dirname(os.path.abspath(__file__)), "memorylab.ico")
+            caminho_icone = resource_path("memorylab.ico")
             if os.path.exists(caminho_icone):
                 self.setWindowIcon(QIcon(caminho_icone))
         except Exception:
@@ -383,6 +390,9 @@ class MainWindow(QMainWindow):
 
         # Centraliza na tela
         self._center_on_screen()
+
+        # Verifica atualizações automaticamente ao iniciar (silencioso)
+        QTimer.singleShot(2000, lambda: check_for_updates(self, silent=True))
 
     def _center_on_screen(self):
         screen = QApplication.primaryScreen().geometry()
@@ -409,7 +419,7 @@ class MainWindow(QMainWindow):
         """)
         main_layout.addWidget(header)
 
-        subtitle = QLabel("Organizador de dados Topscan")
+        subtitle = QLabel(f"Organizador de dados Topscan  ·  v{CURRENT_VERSION}")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet(f"""
             font-size: 12px;
@@ -565,6 +575,10 @@ class MainWindow(QMainWindow):
         self.reiniciar_btn = make_secondary_button("Reiniciar  🔄")
         self.reiniciar_btn.clicked.connect(self._reiniciar_programa)
         action_layout.addWidget(self.reiniciar_btn)
+
+        self.update_btn = make_secondary_button("Atualizar  🔄")
+        self.update_btn.clicked.connect(self._check_updates_manual)
+        action_layout.addWidget(self.update_btn)
 
         action_layout.addStretch()
         main_layout.addWidget(action_frame)
@@ -784,12 +798,21 @@ class MainWindow(QMainWindow):
 
     def _reiniciar_programa(self):
         try:
-            python = sys.executable
-            os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
-            subprocess.Popen([python] + sys.argv)
+            if getattr(sys, 'frozen', False):
+                # Rodando como executável empacotado
+                subprocess.Popen([sys.executable])
+            else:
+                # Rodando como script Python
+                python = sys.executable
+                os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
+                subprocess.Popen([python] + sys.argv)
             QApplication.quit()
         except Exception as e:
             self._mostrar_erro(f"Erro ao reiniciar: {e}")
+
+    def _check_updates_manual(self):
+        """Verifica atualizações manualmente (mostra resultado ao usuário)."""
+        check_for_updates(self, silent=False)
 
 
 # ─── Ponto de Entrada ─────────────────────────────────────────
