@@ -15,7 +15,8 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    # macos-13 = Intel (x86_64) — PyQt5 via pip só funciona em Intel
+    runs-on: macos-13
     
     steps:
       # ─── 1. Checkout do código ───
@@ -35,12 +36,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ─── 4. Gerar .app com PyInstaller ───
+      # ─── 4. Converter ícone .ico para .icns (macOS) ───
+      - name: Converter ícone para .icns
+        run: |
+          mkdir -p NeuroTrace.iconset
+
+          # Usar sips para converter .ico -> .png e gerar os tamanhos necessários
+          sips -s format png memorylab.ico --out icon_base.png
+
+          sips -z 16 16     icon_base.png --out NeuroTrace.iconset/icon_16x16.png
+          sips -z 32 32     icon_base.png --out NeuroTrace.iconset/icon_16x16@2x.png
+          sips -z 32 32     icon_base.png --out NeuroTrace.iconset/icon_32x32.png
+          sips -z 64 64     icon_base.png --out NeuroTrace.iconset/icon_32x32@2x.png
+          sips -z 128 128   icon_base.png --out NeuroTrace.iconset/icon_128x128.png
+          sips -z 256 256   icon_base.png --out NeuroTrace.iconset/icon_128x128@2x.png
+          sips -z 256 256   icon_base.png --out NeuroTrace.iconset/icon_256x256.png
+          sips -z 512 512   icon_base.png --out NeuroTrace.iconset/icon_256x256@2x.png
+          sips -z 512 512   icon_base.png --out NeuroTrace.iconset/icon_512x512.png
+          sips -z 1024 1024 icon_base.png --out NeuroTrace.iconset/icon_512x512@2x.png
+
+          iconutil -c icns NeuroTrace.iconset -o memorylab.icns
+
+          echo "✅ Ícone .icns criado"
+          ls -lh memorylab.icns
+
+      # ─── 5. Gerar .app com PyInstaller ───
       - name: Gerar .app bundle com PyInstaller
         run: |
           python -m PyInstaller packaging/main_macos.spec --clean --noconfirm
 
-      # ─── 5. Verificar se o .app foi criado ───
+      # ─── 6. Verificar se o .app foi criado ───
       - name: Verificar .app bundle
         run: |
           if [ ! -d "dist/NeuroTrace.app" ]; then
@@ -50,7 +75,7 @@ jobs:
           echo "✅ .app bundle criado com sucesso"
           ls -la dist/
 
-      # ─── 6. Criar o .dmg ───
+      # ─── 7. Criar o .dmg ───
       - name: Criar .dmg installer
         run: |
           APP_NAME="NeuroTrace"
@@ -86,7 +111,7 @@ jobs:
           echo "✅ DMG criado: ${DMG_OUTPUT}"
           ls -lh "${DMG_OUTPUT}"
 
-      # ─── 7. Upload do .dmg como artefato ───
+      # ─── 8. Upload do .dmg como artefato ───
       - name: Upload DMG como artefato
         uses: actions/upload-artifact@v4
         with:
@@ -94,7 +119,7 @@ jobs:
           path: installer_output/*.dmg
           retention-days: 90
 
-      # ─── 8. Anexar à Release (se disparado por release) ───
+      # ─── 9. Anexar à Release (se disparado por release) ───
       - name: Anexar DMG à Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2

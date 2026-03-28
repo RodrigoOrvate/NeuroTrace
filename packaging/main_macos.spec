@@ -3,12 +3,17 @@ import os
 
 ROOT = os.path.normpath(os.path.join(SPECPATH, '..'))
 
+# Preferir .icns no macOS (gerado pelo CI), fallback para .ico
+_icns = os.path.join(ROOT, 'memorylab.icns')
+_ico  = os.path.join(ROOT, 'memorylab.ico')
+APP_ICON = _icns if os.path.exists(_icns) else _ico
+
 a = Analysis(
     [os.path.join(ROOT, 'main.py')],
     pathex=[ROOT],
     binaries=[],
     datas=[
-        (os.path.join(ROOT, 'memorylab.ico'), '.'),
+        (APP_ICON, '.'),
         (os.path.join(ROOT, 'procurar_objeto.py'), '.'),
         (os.path.join(ROOT, 'procurar_distvel.py'), '.'),
         (os.path.join(ROOT, 'updater.py'), '.'),
@@ -59,7 +64,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(ROOT, 'memorylab.ico'),
+    icon=APP_ICON,
 )
 
 coll = COLLECT(
@@ -75,7 +80,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='NeuroTrace.app',
-    icon=os.path.join(ROOT, 'memorylab.ico'),
+    icon=APP_ICON,
     bundle_identifier='com.rodrigoorvate.neurotrace',
     info_plist={
         'CFBundleDisplayName': 'NeuroTrace',
