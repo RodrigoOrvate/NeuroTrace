@@ -173,7 +173,7 @@ class CheckUpdateThread(QThread):
             release_notes  = data.get("body", "Sem notas de atualização.")
             download_url, asset_type = self._find_asset(data.get("assets", []))
 
-            if not download_url:
+            if not download_url and asset_type != "win_choice":
                 plat = "macOS" if IS_MACOS else "Windows"
                 self.error.emit(f"Nenhum arquivo para {plat} encontrado no release.")
                 return
@@ -182,9 +182,14 @@ class CheckUpdateThread(QThread):
             remote = _parse_version(remote_version)
 
             if remote > local:
+                asset_url, asset_type = self._find_asset(data.get("assets", []))
+                if not asset_url:
+                    plat = "macOS" if IS_MACOS else "Windows"
+                    self.error.emit(f"Nenhum arquivo para {plat} encontrado no release.")
+                    return
                 self.update_available.emit(
                     remote_version, release_notes,
-                    f"{download_url}|{asset_type}"
+                    f"{asset_url}||{asset_type}"
                 )
             else:
                 self.no_update.emit()
@@ -218,8 +223,10 @@ class CheckUpdateThread(QThread):
             if mac_zip: return mac_zip, "mac_zip"
             return "", ""
         else:
+            # Separa com marcador inequívoco para não confundir com URLs
             if win_installer and win_standalone:
-                return f"{win_installer}|{win_standalone}", "win_choice"
+                combined = f"{win_installer}|||{win_standalone}"
+                return combined, "win_choice"
             if win_installer:  return win_installer,  "win_installer"
             if win_standalone: return win_standalone, "win_standalone"
             return "", ""
@@ -257,6 +264,8 @@ class WhatsNewDialog(QDialog):
     def __init__(self, notes: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle("O que há de novo")
+        # Remove o botão ? do canto da janela
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setFixedSize(520, 400)
         self.setStyleSheet(f"QDialog {{ background-color: {COLORS['bg']}; }}")
         self._setup_ui(notes)
@@ -327,8 +336,8 @@ class WhatsNewDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
-        # Botão GitHub
-        github_btn = QPushButton("  Ver no GitHub")
+        # Botão GitHub com ícone Unicode
+        github_btn = QPushButton("   Ver no GitHub")
         github_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
@@ -343,8 +352,6 @@ class WhatsNewDialog(QDialog):
             }}
         """)
         github_btn.setCursor(Qt.PointingHandCursor)
-        # Ícone SVG inline do GitHub desenhado como texto unicode
-        github_btn.setText("🔗  Ver no GitHub")
         github_btn.clicked.connect(self._open_github)
         btn_row.addWidget(github_btn)
 
@@ -380,24 +387,35 @@ class UpdateDialog(QDialog):
 
     def __init__(self, version: str, notes: str, download_data: str, parent=None):
         super().__init__(parent)
-        parts = download_data.rsplit("|", 1)
-        self.asset_type   = parts[1] if len(parts) > 1 else ""
+        # Formato: "<url_ou_urls>||<asset_type>"
+        sep_idx = download_data.rfind("||")
+        if sep_idx >= 0:
+            url_part       = download_data[:sep_idx]
+            self.asset_type = download_data[sep_idx+2:]
+        else:
+            url_part       = download_data
+            self.asset_type = ""
+
         if self.asset_type == "win_choice":
-            url_parts = parts[0].split("|")
-            self.download_url_setup = url_parts[0]
-            self.download_url_port  = url_parts[1]
+            # url_part = "<setup_url>|||<portable_url>"
+            parts = url_part.split("|||")
+            self.download_url_setup = parts[0] if len(parts) > 0 else ""
+            self.download_url_port  = parts[1] if len(parts) > 1 else ""
             self.download_url = ""
         else:
-            self.download_url = parts[0]
+            self.download_url       = url_part
             self.download_url_setup = ""
             self.download_url_port  = ""
-        self.version      = version
+        self.version         = version
         self.download_thread = None
         self._setup_ui(version, notes)
 
     def _setup_ui(self, version: str, notes: str):
         self.setWindowTitle("Atualização Disponível")
-        self.setFixedSize(480, 400)
+        # Remove o botão ? do canto da janela
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setMinimumSize(500, 420)
+        self.resize(500, 460)
         self.setStyleSheet(f"""
             QDialog {{ background-color: {COLORS['bg']}; }}
             QLabel  {{ color: {COLORS['text']}; background: transparent; }}
@@ -483,15 +501,16 @@ class UpdateDialog(QDialog):
         layout.addStretch()
 
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(12)
+        btn_layout.setSpacing(10)
 
-        self.skip_btn = QPushButton(" Pular ")
+        self.skip_btn = QPushButton("Pular")
         self.skip_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {COLORS['text_muted']};
                 border: 1.5px solid {COLORS['card_border']};
                 font-weight: 600; font-size: 13px;
-                padding: 10px 22px; border-radius: 8px;
+                padding: 10px 0; border-radius: 8px;
+                min-width: 100px;
             }}
             QPushButton:hover {{
                 border-color: {COLORS['text_muted']}; color: {COLORS['text']};
@@ -501,13 +520,14 @@ class UpdateDialog(QDialog):
         self.skip_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.skip_btn)
 
-        self.update_btn = QPushButton(" ⬇ Atualizar ")
+        self.update_btn = QPushButton("⬇  Atualizar")
         self.update_btn.setStyleSheet(f"""
             QPushButton {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 {COLORS['accent']}, stop:1 #8a2e3b);
                 color: #ffffff; font-weight: 700; font-size: 13px;
-                padding: 10px 28px; border-radius: 8px; border: none;
+                padding: 10px 0; border-radius: 8px; border: none;
+                min-width: 140px;
             }}
             QPushButton:hover {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -520,16 +540,17 @@ class UpdateDialog(QDialog):
         self.update_btn.setCursor(Qt.PointingHandCursor)
 
         if self.asset_type == "win_choice":
-            self.update_btn.setText("⬇ Atualizar (Completo)")
+            self.update_btn.setText("⬇  Setup (Completo)")
             self.update_btn.clicked.connect(lambda: self._start_download_choice("win_installer"))
-            
-            self.port_btn = QPushButton("⬇ Apenas Portátil")
+
+            self.port_btn = QPushButton("⬇  Portátil (.exe)")
             self.port_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: {COLORS['card']}; color: {COLORS['text']};
                     border: 1.5px solid {COLORS['accent']};
                     font-weight: 600; font-size: 13px;
-                    padding: 10px 22px; border-radius: 8px;
+                    padding: 10px 0; border-radius: 8px;
+                    min-width: 130px;
                 }}
                 QPushButton:hover {{
                     background: {COLORS['accent']}; color: #ffffff;
@@ -545,7 +566,6 @@ class UpdateDialog(QDialog):
             self.update_btn.clicked.connect(self._start_download)
 
         btn_layout.addWidget(self.update_btn)
-
         layout.addLayout(btn_layout)
 
     def _start_download_choice(self, chosen_type):
@@ -580,8 +600,10 @@ class UpdateDialog(QDialog):
                 f"NeuroTrace_macOS_v{self.version}.zip"
             )
         else:
-            exe_dir = os.path.dirname(sys.executable) if is_frozen() else os.path.dirname(os.path.abspath(__file__))
-            self.temp_path = os.path.join(exe_dir, "NeuroTrace_update.exe")
+            self.temp_path = os.path.join(
+                tempfile.gettempdir(),
+                f"NeuroTrace_Update_v{self.version}.exe"
+            )
 
         self.download_thread = DownloadThread(self.download_url, self.temp_path)
         self.download_thread.progress.connect(self._on_progress)
@@ -640,35 +662,24 @@ class UpdateDialog(QDialog):
     # ─── Windows: Standalone .exe ────────────────────────────
     def _apply_win_standalone(self, new_exe_path: str):
         current_exe = sys.executable
-        backup_exe  = current_exe + ".bak"
-        bat_path    = os.path.join(os.path.dirname(current_exe), "_update.bat")
+        bat_path    = os.path.join(tempfile.gettempdir(), "_nt_update.bat")
 
         bat_content = f"""@echo off
 title Atualizando NeuroTrace...
-echo Aguardando o programa fechar...
-timeout /t 2 /nobreak >nul
-:wait_loop
-tasklist /FI "PID eq %1" 2>nul | find /i "NeuroTrace" >nul
-if not errorlevel 1 (
+:retry_move
+move /y "{new_exe_path}" "{current_exe}" >nul 2>&1
+if errorlevel 1 (
     timeout /t 1 /nobreak >nul
-    goto wait_loop
+    goto retry_move
 )
-echo Aplicando atualizacao...
-if exist "{backup_exe}" del /f "{backup_exe}"
-move /y "{current_exe}" "{backup_exe}"
-move /y "{new_exe_path}" "{current_exe}"
-echo Iniciando nova versao...
 start "" "{current_exe}"
-timeout /t 3 /nobreak >nul
-if exist "{backup_exe}" del /f "{backup_exe}"
 del /f "%~f0"
 """
         with open(bat_path, "w", encoding="utf-8") as f:
             f.write(bat_content)
 
-        pid = os.getpid()
         subprocess.Popen(
-            ["cmd.exe", "/c", bat_path, str(pid)],
+            ["cmd.exe", "/c", bat_path],
             creationflags=subprocess.CREATE_NO_WINDOW
         )
         QApplication.quit()

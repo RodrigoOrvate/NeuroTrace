@@ -290,9 +290,9 @@ def make_github_button():
             btn.setIconSize(QSize(20, 20))
             btn.setText("")
         else:
-            btn.setText("GH")
+            btn.setText("🐙")  # Octocat Unicode fallback
     except Exception:
-        btn.setText("GH")
+        btn.setText("🐙")  # Octocat Unicode fallback
 
     return btn
 
