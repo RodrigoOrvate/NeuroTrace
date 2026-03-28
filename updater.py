@@ -31,7 +31,7 @@ GITHUB_OWNER = "RodrigoOrvate"
 GITHUB_REPO  = "NeuroTrace"
 GITHUB_API_URL  = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 GITHUB_REPO_URL = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
-CURRENT_VERSION = "2.0.0"
+CURRENT_VERSION = "1.0.0"
 
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS   = sys.platform == "darwin"
@@ -165,12 +165,12 @@ class CheckUpdateThread(QThread):
         try:
             req = Request(GITHUB_API_URL)
             req.add_header("User-Agent",  "NeuroTrace-Updater")
-            req.add_header("Accept", "application/vnd.github.v3+json")
+            req.add_header("Accept", "application/vnd.github.v3.html+json")
             with urlopen(req, timeout=15) as response:
                 data = json.loads(response.read().decode("utf-8"))
 
             remote_version = data.get("tag_name", "")
-            release_notes  = data.get("body", "Sem notas de atualização.")
+            release_notes  = data.get("body_html", "Sem notas de atualização.")
             download_url, asset_type = self._find_asset(data.get("assets", []))
 
             if not download_url and asset_type != "win_choice":
@@ -245,10 +245,10 @@ class FetchReleaseNotesThread(QThread):
             url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/tags/{tag}"
             req = Request(url)
             req.add_header("User-Agent", "NeuroTrace-Updater")
-            req.add_header("Accept", "application/vnd.github.v3+json")
+            req.add_header("Accept", "application/vnd.github.v3.html+json")
             with urlopen(req, timeout=15) as response:
                 data  = json.loads(response.read().decode("utf-8"))
-                notes = data.get("body", "").strip()
+                notes = data.get("body_html", "").strip()
                 self.finished.emit(notes if notes else "Sem notas de atualização para esta versão.")
         except URLError:
             self.error.emit("Sem conexão com a internet.")
@@ -291,15 +291,36 @@ class WhatsNewDialog(QDialog):
         sep.setStyleSheet(f"background-color: {COLORS['card_border']}; max-height: 1px;")
         layout.addWidget(sep)
 
-        # Notas em scroll
-        from qt_compat import QScrollArea, QWidget as _QWidget
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet(f"""
-            QScrollArea {{
+        # Notas nativas em TextBrowser (lida perfeitamente com HTML gerado pelo GitHub)
+        from qt_compat import QTextBrowser
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        
+        # CSS limpo para garantir que a Tabela e textos renderizem corretos no widget HTML
+        html_content = f"""
+        <html>
+        <head>
+        <style>
+            table {{ border-collapse: collapse; width: 100%; margin-top: 8px; margin-bottom: 8px; }}
+            th, td {{ border: 1px solid {COLORS['card_border']}; padding: 6px; text-align: left; }}
+            th {{ background-color: rgba(255, 255, 255, 0.05); font-weight: bold; }}
+            a {{ color: {COLORS['accent']}; text-decoration: none; }}
+            h1, h2, h3 {{ border-bottom: 1px solid {COLORS['card_border']}; padding-bottom: 5px; }}
+            body {{ font-family: sans-serif; font-size: 13px; color: {COLORS['text']}; margin: 2px; }}
+        </style>
+        </head>
+        <body>{notes}</body>
+        </html>
+        """
+        browser.setHtml(html_content)
+        browser.setStyleSheet(f"""
+            QTextBrowser {{
                 border: 1px solid {COLORS['card_border']};
                 border-radius: 8px;
                 background: {COLORS['card']};
+                color: {COLORS['text']};
+                font-size: 13px;
+                padding: 10px;
             }}
             QScrollBar:vertical {{
                 background: {COLORS['card']};
@@ -314,23 +335,7 @@ class WhatsNewDialog(QDialog):
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         """)
-        notes_widget = _QWidget()
-        notes_widget.setStyleSheet(f"background: {COLORS['card']};")
-        notes_layout = QVBoxLayout(notes_widget)
-        notes_layout.setContentsMargins(14, 12, 14, 12)
-
-        notes_label = QLabel(notes)
-        notes_label.setWordWrap(True)
-        notes_label.setStyleSheet(f"""
-            font-size: 13px; color: {COLORS['text']};
-            line-height: 1.6;
-        """)
-        notes_label.setTextFormat(Qt.MarkdownText)
-        notes_label.setOpenExternalLinks(True)
-        notes_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        notes_layout.addWidget(notes_label)
-        scroll.setWidget(notes_widget)
-        layout.addWidget(scroll, stretch=1)
+        layout.addWidget(browser, stretch=1)
 
         # Botões
         btn_row = QHBoxLayout()
@@ -438,14 +443,32 @@ class UpdateDialog(QDialog):
         ver_label.setStyleSheet(f"font-size: 14px; color: {COLORS['text_muted']}; padding: 4px 0;")
         layout.addWidget(ver_label)
 
-        # Notas com Scroll
-        from qt_compat import QScrollArea, QWidget as _QWidget
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet(f"""
-            QScrollArea {{
+        # Notas nativas em TextBrowser com HTML Parse
+        from qt_compat import QTextBrowser
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        
+        html_content = f"""
+        <html>
+        <head>
+        <style>
+            table {{ border-collapse: collapse; width: 100%; margin-top: 8px; margin-bottom: 8px; }}
+            th, td {{ border: 1px solid {COLORS['card_border']}; padding: 6px; text-align: left; }}
+            th {{ background-color: rgba(255, 255, 255, 0.05); font-weight: bold; }}
+            a {{ color: {COLORS['accent']}; text-decoration: none; }}
+            h1, h2, h3 {{ border-bottom: 1px solid {COLORS['card_border']}; padding-bottom: 5px; }}
+            body {{ font-family: sans-serif; font-size: 13px; color: {COLORS['text']}; margin: 2px; }}
+        </style>
+        </head>
+        <body>{notes}</body>
+        </html>
+        """
+        browser.setHtml(html_content)
+        browser.setStyleSheet(f"""
+            QTextBrowser {{
                 border: 1px solid {COLORS['card_border']};
                 border-radius: 8px; background: {COLORS['card']};
+                color: {COLORS['text']}; font-size: 13px; padding: 10px;
             }}
             QScrollBar:vertical {{
                 background: {COLORS['card']}; width: 8px; border-radius: 4px;
@@ -456,22 +479,7 @@ class UpdateDialog(QDialog):
             QScrollBar::handle:vertical:hover {{ background: {COLORS['accent']}; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
         """)
-        
-        notes_widget = _QWidget()
-        notes_widget.setStyleSheet(f"background: transparent;")
-        notes_layout = QVBoxLayout(notes_widget)
-        notes_layout.setContentsMargins(12, 12, 12, 12)
-
-        notes_label = QLabel(notes)
-        notes_label.setWordWrap(True)
-        notes_label.setStyleSheet(f"font-size: 13px; color: {COLORS['text']}; line-height: 1.6;")
-        notes_label.setTextFormat(Qt.MarkdownText)
-        notes_label.setOpenExternalLinks(True)
-        notes_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        
-        notes_layout.addWidget(notes_label)
-        scroll.setWidget(notes_widget)
-        layout.addWidget(scroll, stretch=1)
+        layout.addWidget(browser, stretch=1)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
