@@ -656,90 +656,116 @@ class UpdateDialog(QDialog):
             QMessageBox.warning(self, "Erro", "Tipo de atualização desconhecido.")
             self.accept()
 
-    # ─── Windows: Instalador Inno Setup ──────────────
+    # ─── Windows: Instalador Inno Setup ──────────────────────
     def _apply_win_installer(self, installer_path: str):
-        current_exe = sys.executable
-        bat_path    = os.path.join(tempfile.gettempdir(), '_nt_setup_update.bat')
-        pid         = os.getpid()
+        from sys import executable
+        is_installed = "program files" in executable.lower() or "appdata" in executable.lower()
+        # Codifica o Refresh do Windows em base64 para injetar de forma segura no VBS (Ignora escapes de aspas duplas de C#)
+        ps_script = 'Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class Shell { [DllImport("shell32.dll")] public static extern void SHChangeNotify(uint wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2); }\'; [Shell]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)'
+        import base64
+        encoded_ps = base64.b64encode(ps_script.encode("utf-16le")).decode("ascii")
 
-        bat_lines = [
-            '@echo off',
-            'title Atualizando NeuroTrace...',
-            ':wait_pid',
-            'tasklist /FI "PID eq PID_PH" 2>nul | find /i "PID_PH" >nul',
-            'if not errorlevel 1 (',
-            '    timeout /t 1 /nobreak >nul',
-            '    goto wait_pid',
-            ')',
-            '"INST_PH" /SILENT /CLOSEAPPLICATIONS',
-            'del /f /q "INST_PH"',
-            'if exist "EXE_PH" del /f /q "EXE_PH"',
-            'for /r "%ProgramFiles%\\NeuroTrace" %%i in (*.exe) do (',
-            '    start "" "%%i"',
-            '    goto :eof',
-            ')',
-            'for /r "%ProgramFiles(x86)%\\NeuroTrace" %%i in (*.exe) do (',
-            '    start "" "%%i"',
-            '    goto :eof',
-            ')',
-            'del /f "%~f0"',
-        ]
+        if getattr(sys, "frozen", False) and not is_installed:
+            vbs_path = os.path.join(tempfile.gettempdir(), "_nt_install.vbs")
+            vbs_content = f"""
+Set fso = CreateObject("Scripting.FileSystemObject")
+Set shell = CreateObject("WScript.Shell")
+On Error Resume Next
+' Roda o instalador parado aguardando o fim da instalação
+shell.Run Chr(34) & "{installer_path}" & Chr(34) & " /SP- /SILENT /CLOSEAPPLICATIONS", 1, True
 
-        bat_content = '\n'.join(bat_lines) + '\n'
-        bat_content = bat_content.replace('PID_PH', str(pid))
-        bat_content = bat_content.replace('INST_PH', installer_path)
-        bat_content = bat_content.replace('EXE_PH', current_exe)
+' Fica em loop caçando e deletando o EXE portátil antigo que iniciou esse update
+Do While fso.FileExists("{executable}")
+    fso.DeleteFile "{executable}", True
+    If Err.Number = 0 Or Not fso.FileExists("{executable}") Then Exit Do
+    Err.Clear
+    WScript.Sleep 1000
+Loop
+' Força a renovação visual do Desktop (Remove fantasmas) via PowerShell SHChangeNotify escondido
+psRefresh = "powershell.exe -WindowStyle Hidden -EncodedCommand {encoded_ps}"
+shell.Run psRefresh, 0, True
 
-        with open(bat_path, 'w', encoding='utf-8') as f:
-            f.write(bat_content)
+fso.DeleteFile WScript.ScriptFullName, True
+"""
+            with open(vbs_path, "w", encoding="utf-16") as f:
+                f.write(vbs_content)
+                
+            # Limpa qualquer variável de ambiente injetada pelo PyInstaller (_MEIPASS2, _PYI_...)
+            env_clear = os.environ.copy()
+            for k in list(env_clear.keys()):
+                if "MEI" in k or "PYI" in k:
+                    env_clear.pop(k, None)
 
-        subprocess.Popen(
-            ['cmd.exe', '/c', bat_path],
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
-        QApplication.quit()
-    # ─── Windows: Standalone .exe ────────────────────────────
+            # Invoca o VBScript imune a quebras de string do Windows
+            subprocess.Popen(
+                ["wscript.exe", "//B", "//Nologo", vbs_path],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                env=env_clear
+            )
+            os._exit(0)
+        else:
+            try:
+                subprocess.Popen(
+                    [installer_path, "/SILENT", "/CLOSEAPPLICATIONS"],
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+            except Exception:
+                subprocess.Popen([installer_path])
+            os._exit(0)
+
     def _apply_win_standalone(self, new_exe_path: str):
-        """
-        Substitui o .exe atual pelo novo no mesmo caminho (sys.executable),
-        independente do nome do arquivo novo. Faz backup e reverte se falhar.
-        """
         current_exe = sys.executable
-        backup_exe  = current_exe + ".bak"
-        bat_path    = os.path.join(tempfile.gettempdir(), "_nt_update.bat")
-        pid         = os.getpid()
+        import subprocess
+        import tempfile
+        import os
+        
+        # Codifica o Refresh do Windows em base64 para injetar de forma segura no VBS (Ignora escapes de aspas duplas de C#)
+        ps_script = 'Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class Shell { [DllImport("shell32.dll")] public static extern void SHChangeNotify(uint wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2); }\'; [Shell]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)'
+        import base64
+        encoded_ps = base64.b64encode(ps_script.encode("utf-16le")).decode("ascii")
 
-        bat_content = (
-            "@echo off\n"
-            "title Atualizando NeuroTrace...\n"
-            ":wait_pid\n"
-            f"tasklist /FI \"PID eq {pid}\" 2>nul | find /i \"{pid}\" >nul\n"
-            "if not errorlevel 1 (\n"
-            "    timeout /t 1 /nobreak >nul\n"
-            "    goto wait_pid\n"
-            ")\n"
-            f"if exist \"{backup_exe}\" del /f /q \"{backup_exe}\"\n"
-            f"move /y \"{current_exe}\" \"{backup_exe}\"\n"
-            f"move /y \"{new_exe_path}\" \"{current_exe}\"\n"
-            f"if exist \"{current_exe}\" (\n"
-            f"    start \"\" \"{current_exe}\"\n"
-            "    timeout /t 3 /nobreak >nul\n"
-            f"    if exist \"{backup_exe}\" del /f /q \"{backup_exe}\"\n"
-            ") else (\n"
-            "    echo Erro ao substituir. Revertendo...\n"
-            f"    move /y \"{backup_exe}\" \"{current_exe}\"\n"
-            ")\n"
-            "del /f \"%~f0\"\n"
-        )
+        vbs_path = os.path.join(tempfile.gettempdir(), "_nt_update.vbs")
 
-        with open(bat_path, "w", encoding="utf-8") as f:
-            f.write(bat_content)
+        # Usamos VBScript (salvo em unicode UTF-16) porque o cmd.exe do Windows corrompe caminhos
+        # que contenham acento (ex: 'Área', 'Olímpio') dependendo do CodePage local (bug conhecido ansi-utf).
+        vbs_content = f"""
+WScript.Sleep 2000
+Set fso = CreateObject("Scripting.FileSystemObject")
+Do While fso.FileExists("{current_exe}")
+    On Error Resume Next
+    fso.DeleteFile "{current_exe}", True
+    If Err.Number = 0 Or Not fso.FileExists("{current_exe}") Then Exit Do
+    Err.Clear
+    On Error GoTo 0
+    WScript.Sleep 1000
+Loop
+On Error Resume Next
+fso.CopyFile "{new_exe_path}", "{current_exe}", True
+Set shell = CreateObject("WScript.Shell")
+shell.Run Chr(34) & "{current_exe}" & Chr(34)
+On Error GoTo 0
+
+' Força a renovação visual do Desktop (Remove fantasmas) via PowerShell SHChangeNotify escondido
+psRefresh = "powershell.exe -WindowStyle Hidden -EncodedCommand {encoded_ps}"
+shell.Run psRefresh, 0, True
+
+fso.DeleteFile "{new_exe_path}", True
+fso.DeleteFile WScript.ScriptFullName, True
+"""
+        with open(vbs_path, "w", encoding="utf-16") as f:
+            f.write(vbs_content)
+
+        env_clear = os.environ.copy()
+        for k in list(env_clear.keys()):
+            if "MEI" in k or "PYI" in k:
+                env_clear.pop(k, None)
 
         subprocess.Popen(
-            ["cmd.exe", "/c", bat_path],
-            creationflags=subprocess.CREATE_NO_WINDOW
+            ["wscript.exe", "//B", "//Nologo", vbs_path],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            env=env_clear
         )
-        QApplication.quit()
+        os._exit(0)
 
     # ─── macOS: .dmg ─────────────────────────────────────────
     def _apply_mac_dmg(self, dmg_path: str):

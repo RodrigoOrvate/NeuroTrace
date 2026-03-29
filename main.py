@@ -880,7 +880,10 @@ class MainWindow(QMainWindow):
 
 # ─── Ponto de Entrada ─────────────────────────────────────────
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+    
     app.setStyle("Fusion")
 
     palette = QPalette()
