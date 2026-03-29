@@ -164,7 +164,8 @@ O `.app` será gerado em `dist/NeuroTrace.app` e o `.dmg` em `installer_output/`
 ```
 NeuroTrace/
 ├── .github/workflows/      # CI/CD para build macOS
-│   └── build_macos.yml     # GitHub Actions — gera o .dmg
+│   ├── build_macos.yml     # GitHub Actions — gera o .dmg
+│   └── build_windows.yml   # GitHub Actions — gera .exe e setup
 │
 ├── main.py                 # Interface principal (Qt)
 ├── qt_compat.py            # Compatibilidade PyQt5/PySide6
@@ -177,10 +178,7 @@ NeuroTrace/
 ├── packaging/              # Scripts de build e empacotamento
 │   ├── main.spec           # PyInstaller spec — Windows
 │   ├── main_macos.spec     # PyInstaller spec — macOS
-│   ├── installer.iss       # Inno Setup — instalador Windows
-│   ├── build_exe.bat       # Build apenas .exe (Windows)
-│   ├── build_installer.bat # Build .exe + instalador (Windows)
-│   └── build_macos.sh      # Build .app + .dmg (macOS)
+│   └── installer.iss       # Inno Setup — instalador Windows
 │
 ├── dist/                   # Executáveis compilados (gitignored)
 └── installer_output/       # Instaladores gerados (gitignored)
