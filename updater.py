@@ -608,10 +608,12 @@ class UpdateDialog(QDialog):
                 f"NeuroTrace_macOS_v{self.version}.zip"
             )
         else:
-            self.temp_path = os.path.join(
-                tempfile.gettempdir(),
-                f"NeuroTrace_Update_v{self.version}.exe"
-            )
+            # Pasta local junto ao executável — evita falsos positivos de Trojan
+            # que ocorrem quando o download vai direto para AppData/Local/Temp.
+            base = os.path.dirname(sys.executable) if is_frozen() else os.path.dirname(os.path.abspath(__file__))
+            update_dir = os.path.join(base, "_update")
+            os.makedirs(update_dir, exist_ok=True)
+            self.temp_path = os.path.join(update_dir, f"NeuroTrace_v{self.version}.exe")
 
         self.download_thread = DownloadThread(self.download_url, self.temp_path)
         self.download_thread.progress.connect(self._on_progress)
@@ -715,45 +717,27 @@ fso.DeleteFile WScript.ScriptFullName, True
 
     def _apply_win_standalone(self, new_exe_path: str):
         current_exe = sys.executable
-        import subprocess
-        import tempfile
-        import os
-        
-        # Codifica o Refresh do Windows em base64 para injetar de forma segura no VBS (Ignora escapes de aspas duplas de C#)
-        ps_script = 'Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class Shell { [DllImport("shell32.dll")] public static extern void SHChangeNotify(uint wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2); }\'; [Shell]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)'
-        import base64
-        encoded_ps = base64.b64encode(ps_script.encode("utf-16le")).decode("ascii")
+        bat_path = os.path.join(os.path.dirname(new_exe_path), "_nt_update.bat")
 
-        vbs_path = os.path.join(tempfile.gettempdir(), "_nt_update.vbs")
-
-        # Usamos VBScript (salvo em unicode UTF-16) porque o cmd.exe do Windows corrompe caminhos
-        # que contenham acento (ex: 'Área', 'Olímpio') dependendo do CodePage local (bug conhecido ansi-utf).
-        vbs_content = f"""
-WScript.Sleep 2000
-Set fso = CreateObject("Scripting.FileSystemObject")
-Do While fso.FileExists("{current_exe}")
-    On Error Resume Next
-    fso.DeleteFile "{current_exe}", True
-    If Err.Number = 0 Or Not fso.FileExists("{current_exe}") Then Exit Do
-    Err.Clear
-    On Error GoTo 0
-    WScript.Sleep 1000
-Loop
-On Error Resume Next
-fso.CopyFile "{new_exe_path}", "{current_exe}", True
-Set shell = CreateObject("WScript.Shell")
-shell.Run Chr(34) & "{current_exe}" & Chr(34)
-On Error GoTo 0
-
-' Força a renovação visual do Desktop (Remove fantasmas) via PowerShell SHChangeNotify escondido
-psRefresh = "powershell.exe -WindowStyle Hidden -EncodedCommand {encoded_ps}"
-shell.Run psRefresh, 0, True
-
-fso.DeleteFile "{new_exe_path}", True
-fso.DeleteFile WScript.ScriptFullName, True
-"""
-        with open(vbs_path, "w", encoding="utf-16") as f:
-            f.write(vbs_content)
+        # Helper script .bat conforme diretrizes do projeto:
+        #   1. timeout /t 2  — aguarda o processo principal liberar o lock do .exe
+        #   2. move /y       — substitui o executável antigo pelo novo (operação atômica)
+        #   3. start ""      — reinicia a nova versão automaticamente
+        #   4. del "%~f0"    — auto-deleta o script após a conclusão
+        #
+        # ATENÇÃO: cmd.exe pode corromper caminhos com acentos (ex: "Área") em
+        # sistemas com CodePage OEM diferente de 65001. Se o .exe estiver em um
+        # caminho acentuado, use o fluxo win_installer (Setup) como alternativa.
+        bat_content = (
+            "@echo off\n"
+            "chcp 65001 >nul\n"
+            f'timeout /t 2 /nobreak >nul\n'
+            f'move /y "{new_exe_path}" "{current_exe}"\n'
+            f'start "" "{current_exe}"\n'
+            'del "%~f0"\n'
+        )
+        with open(bat_path, "w", encoding="utf-8") as f:
+            f.write(bat_content)
 
         env_clear = os.environ.copy()
         for k in list(env_clear.keys()):
@@ -761,8 +745,8 @@ fso.DeleteFile WScript.ScriptFullName, True
                 env_clear.pop(k, None)
 
         subprocess.Popen(
-            ["wscript.exe", "//B", "//Nologo", vbs_path],
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            ["cmd.exe", "/C", bat_path],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
             env=env_clear
         )
         os._exit(0)
