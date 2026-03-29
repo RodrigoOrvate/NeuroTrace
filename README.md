@@ -44,7 +44,7 @@ A forma mais simples de instalar o programa. O instalador configura tudo automat
 1. Acesse a **[página de Releases](https://github.com/RodrigoOrvate/NeuroTrace/releases/latest)**
 2. Baixe o arquivo **`NeuroTrace_Setup_v2.0.0.exe`**
 3. Execute o instalador e siga as instruções
-4. O programa será instalado em `C:\Program Files\NeuroTrace` e um atalho será criado na **Área de Trabalho**
+4. O programa será instalado em `C:\Program Files (x86)\NeuroTrace` e um atalho será criado na **Área de Trabalho**
 
 > **Nota:** O Windows pode exibir um alerta do SmartScreen na primeira execução. Clique em **"Mais informações"** → **"Executar assim mesmo"**.
 
@@ -104,11 +104,14 @@ python3 main.py
 
 ## 🔄 Atualizações Automáticas
 
-O programa verifica automaticamente se há novas versões ao iniciar. Quando uma atualização estiver disponível:
+O programa verifica automaticamente se há novas versões ao iniciar. Quando uma atualização estiver disponível, um diálogo aparecerá com as opções de download. O sistema suporta todos os cenários de transição:
 
-1. Um diálogo aparecerá informando a nova versão
-2. Clique em **"Atualizar"** para baixar e instalar automaticamente
-3. O programa reinicia com a versão mais recente
+| De → Para | Comportamento |
+|---|---|
+| Portátil → Portátil | Substitui o `.exe` no lugar e reinicia |
+| Portátil → Instalador | Executa o Setup e remove o `.exe` portátil antigo |
+| Instalador → Instalador | Executa o novo Setup (`/SILENT /CLOSEAPPLICATIONS`) |
+| Instalador → Portátil | Move o `.exe` para a Área de Trabalho e desinstala a versão anterior |
 
 Você também pode verificar manualmente clicando no botão **"Atualizar 🔄"** na interface.
 

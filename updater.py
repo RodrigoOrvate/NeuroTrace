@@ -811,8 +811,13 @@ class UpdateDialog(QDialog):
                 # Remove atalho do Desktop público (instalação admin) e do Desktop do usuário
                 '  del /f /q "%NT_SHORTCUT_PUB%" >nul 2>&1\n'
                 '  del /f /q "%NT_SHORTCUT_USR%" >nul 2>&1\n'
-                # Tenta remover pasta inteira do Program Files (pode falhar sem admin — tolerado)
-                '  rmdir /s /q "%NT_OLD_DIR%" >nul 2>&1\n'
+                # Desinstala via uninstaller do Inno Setup (tem admin, remove pasta + registro)
+                '  if exist "%NT_OLD_DIR%\\unins000.exe" (\n'
+                '    echo [bat] executando desinstalador >> "%NT_LOG%"\n'
+                '    start "" "%NT_OLD_DIR%\\unins000.exe" /SILENT /NORESTART\n'
+                '  ) else (\n'
+                '    rmdir /s /q "%NT_OLD_DIR%" >nul 2>&1\n'
+                '  )\n'
                 '  start "" "%NT_DEST_EXE%"\n'
                 # Notifica o shell para atualizar ícones da Área de Trabalho
                 '  ie4uinit.exe -show\n'
