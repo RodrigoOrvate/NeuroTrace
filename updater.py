@@ -31,7 +31,7 @@ GITHUB_OWNER = "RodrigoOrvate"
 GITHUB_REPO  = "NeuroTrace"
 GITHUB_API_URL  = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 GITHUB_REPO_URL = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
-CURRENT_VERSION = "2.0.0"
+CURRENT_VERSION = "2.0.1"
 
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS   = sys.platform == "darwin"

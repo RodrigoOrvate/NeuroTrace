@@ -82,7 +82,7 @@ jobs:
       - name: Criar .dmg installer
         run: |
           APP_NAME="NeuroTrace"
-          VERSION="2.0.0"
+          VERSION="2.0.1"
           DMG_NAME="${APP_NAME}_macOS_v${VERSION}"
           DMG_DIR="dmg_staging"
           DMG_OUTPUT="installer_output/${DMG_NAME}.dmg"
