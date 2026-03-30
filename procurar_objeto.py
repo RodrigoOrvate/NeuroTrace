@@ -77,8 +77,10 @@ def procurar(
     df = pd.read_excel(caminho_arquivo1, header=TOPSCAN_HEADER_ROW)
 
     # Garante que colunas de string não contenham floats NaN antes de qualquer filtragem
-    df['OBJECTS'] = df['OBJECTS'].fillna('')
-    df['Events'] = df['Events'].fillna('')
+    # .astype(str) é necessário: fillna('') sozinho não converte valores numéricos
+    # não-NaN (ex: 5.0 permaneceria float), o que faz str.contains falhar silenciosamente
+    df['OBJECTS'] = df['OBJECTS'].fillna('').astype(str)
+    df['Events'] = df['Events'].fillna('').astype(str)
 
     df['DAY'] = df['DAY'].astype(str)
     df['DAY'] = df['DAY'].apply(lambda x: str(x)[:-2] if str(x).endswith('.0') else str(x))

@@ -74,7 +74,7 @@ Há um único instalador compatível com todos os Macs (Intel e Apple Silicon vi
 
 > **Nota:** Como o app não é assinado com certificado Apple Developer, o macOS pode bloquear a execução. Se aparecer a mensagem _"não pode ser aberto porque o desenvolvedor não pode ser verificado"_, vá em **Ajustes do Sistema → Privacidade e Segurança** e clique em **"Abrir Mesmo Assim"**.
 
-> **Atualizações automáticas:** O NeuroTrace detecta automaticamente a arquitetura do seu Mac (Apple Silicon ou Intel) e baixa o DMG correto ao atualizar. Nenhuma escolha manual é necessária.
+> **Atualizações automáticas:** O NeuroTrace verifica e baixa automaticamente o novo DMG ao atualizar. Nenhuma escolha manual é necessária.
 
 #### Opção 2 — Executar a partir do código-fonte
 
@@ -128,14 +128,14 @@ Você também pode verificar manualmente clicando no botão **"Atualizar 🔄"**
 
 ### Pré-requisitos
 
-- Python 3.10+
-- Dependências:
+- Python 3.11+
+- Dependências (instaladas automaticamente via `requirements.txt`):
 
 ```bash
-pip install PyQt5 pandas openpyxl pyinstaller  # Windows
-# ou
-pip install PySide6 pandas openpyxl pyinstaller  # macOS / multiplataforma
+pip install -r requirements.txt
 ```
+
+> O `requirements.txt` instala **PyQt5** no Windows e **PySide6** no macOS automaticamente, além de `pandas`, `openpyxl`, `requests` e `pyinstaller`.
 
 ### Executar em modo desenvolvimento
 
@@ -143,26 +143,21 @@ pip install PySide6 pandas openpyxl pyinstaller  # macOS / multiplataforma
 python main.py
 ```
 
-### Build para Windows
+### Build (GitHub Actions)
 
-```bash
-# Apenas o .exe
-packaging\build_exe.bat
+Os builds são gerados automaticamente via **GitHub Actions** ao criar uma Release ou disparando manualmente pelo painel do repositório:
 
-# .exe + Instalador (requer Inno Setup 6)
-packaging\build_installer.bat
-```
+| Workflow | Arquivo | Runner |
+|---|---|---|
+| `build_windows.yml` | `.exe` portátil + `Setup.exe` (Inno Setup 6) | `windows-latest` |
+| `build_macos.yml` | `.dmg` Intel (macOS 12+ / Rosetta 2) | `macos-15-intel` |
 
-O `.exe` será gerado em `dist/NeuroTrace.exe` e o instalador em `installer_output/`.
+Os artefatos ficam disponíveis na aba **Actions** do repositório e são anexados automaticamente à Release.
 
-### Build para macOS
-
-```bash
-chmod +x packaging/build_macos.sh
-./packaging/build_macos.sh
-```
-
-O `.app` será gerado em `dist/NeuroTrace.app` e o `.dmg` em `installer_output/`.
+**Arquivos de configuração de build** (em `packaging/`):
+- `main.spec` — PyInstaller spec para Windows
+- `main_macos.spec` — PyInstaller spec para macOS
+- `installer.iss` — Script do Inno Setup para o instalador Windows
 
 ---
 
@@ -170,7 +165,7 @@ O `.app` será gerado em `dist/NeuroTrace.app` e o `.dmg` em `installer_output/`
 
 ```
 NeuroTrace/
-├── .github/workflows/      # CI/CD para build macOS
+├── .github/workflows/      # CI/CD — builds automáticos
 │   ├── build_macos.yml     # GitHub Actions — gera o .dmg
 │   └── build_windows.yml   # GitHub Actions — gera .exe e setup
 │
@@ -182,7 +177,7 @@ NeuroTrace/
 ├── memorylab.ico           # Ícone do aplicativo
 ├── requirements.txt        # Dependências por plataforma
 │
-├── packaging/              # Scripts de build e empacotamento
+├── packaging/              # Configurações de empacotamento
 │   ├── main.spec           # PyInstaller spec — Windows
 │   ├── main_macos.spec     # PyInstaller spec — macOS
 │   └── installer.iss       # Inno Setup — instalador Windows

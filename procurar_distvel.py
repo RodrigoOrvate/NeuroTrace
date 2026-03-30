@@ -3,17 +3,28 @@ procurar_distvel.py — Módulo de Processamento de Distância e Velocidade
 
 Responsável por organizar dados de distância percorrida e velocidade média
 gerados pelo software Topscan (aba "Bin Measure"). Agrupa por dia em abas
-separadas, soma Bin1 + Bin2, e calcula a distância em metros.
+separadas, detecta automaticamente todos os bins disponíveis, e calcula
+a velocidade real como Distância Total / (N Bins Preenchidos * Bin Size).
+
+Ordem das colunas de saída por aba (dia):
+  Dia | Animal | [1º Xs (mm) ... Nº Xs (mm)] | Distância Total (mm) |
+  Distância Total (m) | [1º Xs Vm (mm/s) ... Nº Xs Vm (mm/s)] |
+  Velocidade Média (mm/s)
+
+Regra crítica (CLAUDE.md):
+  Velocidade Média = Distância Total / (Bins Preenchidos * Bin Size)
+  Nunca somar ou fazer média simples de velocidades de bins diferentes.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import List, Tuple
 
 import pandas as pd
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, Side
+from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -24,37 +35,17 @@ logger = logging.getLogger(__name__)
 TOPSCAN_HEADER_ROW = 6
 SHEET_NAME = "Bin Measure"
 MEASURE_COLUMN = "Measure"
+BIN_SIZE_CELL = "B5"          # célula com o Bin Size (ex: "60.0 seconds" ou 60.0)
 
-# Eventos do Topscan para filtrar
 EVENT_DISTANCE = "Mouse 1 Center Distance Traveled (apart 1.000000 second)"
 EVENT_VELOCITY = "Mouse 1 Center Velocity Average (apart 1.000000 second)"
 
-# Colunas de interesse após o merge
 MERGE_KEYS = ["DAY", "ANIMAL"]
-OUTPUT_COLUMNS = ["DAY", "ANIMAL", "Bin_Soma_dist", "Bin_Soma_vel"]
-
-# Conversão de milímetros para metros
 MM_TO_METERS_DIVISOR = 1000
 
-# Renomeação de cabeçalhos para a planilha de saída
-COLUMN_RENAMES = {
-    "DAY": "Dia",
-    "ANIMAL": "Animal",
-    "Bin_Soma_dist": "Distância",
-    "Bin_Soma_dist_blank": "Distância (metros)",
-    "Bin_Soma_vel": "Velocidade",
-}
-
-# Formatação de largura das colunas Excel
-COLUMN_WIDTHS = {
-    "C": 14,   # Distância
-    "D": 18,   # Distância (metros)
-    "E": 14,   # Velocidade
-}
-
 # ─── Estilos do Excel ────────────────────────────────────────
-CENTERED = Alignment(horizontal="center", vertical="center")
-HEADER_FONT = Font(bold=True)
+CENTERED      = Alignment(horizontal="center", vertical="center")
+HEADER_FONT   = Font(bold=True)
 HEADER_BORDER = Border(
     left=Side(style="thin"),
     right=Side(style="thin"),
@@ -62,97 +53,227 @@ HEADER_BORDER = Border(
     bottom=Side(style="thin"),
 )
 
+# ─── Larguras de colunas (em caracteres) ─────────────────────
+WIDTH_DIA       = 8
+WIDTH_ANIMAL    = 10
+WIDTH_BIN_DIST  = 16
+WIDTH_TOTAL_MM  = 22
+WIDTH_TOTAL_M   = 18
+WIDTH_BIN_VEL   = 22
+WIDTH_VEL_MEDIA = 24
+
 
 # ─── Funções Auxiliares ───────────────────────────────────────
 
+def _ler_bin_size(caminho_arquivo: str) -> float:
+    """Lê o valor de Bin Size diretamente da célula B5 da aba 'Bin Measure'.
+
+    Aceita tanto valor numérico puro (60.0) quanto texto com unidade ('60.0 seconds').
+    Extrai apenas a parte numérica antes do primeiro espaço e normaliza vírgula → ponto.
+    Retorna 1.0 somente como último recurso de falha total.
+    """
+    try:
+        wb = load_workbook(caminho_arquivo, read_only=True, data_only=True)
+        ws = wb[SHEET_NAME]
+        valor = ws[BIN_SIZE_CELL].value
+        wb.close()
+        if valor is None:
+            logger.warning("Célula %s está vazia — usando Bin Size = 1.0", BIN_SIZE_CELL)
+            return 1.0
+        # Extrai a parte numérica: converte para str, pega token antes do 1º espaço,
+        # normaliza separador decimal (vírgula → ponto)
+        parte_numerica = str(valor).split()[0].replace(",", ".")
+        return float(parte_numerica)
+    except PermissionError:
+        raise  # propaga para main.py tratar com QMessageBox
+    except Exception as exc:
+        logger.warning(
+            "Não foi possível extrair número de Bin Size na célula %s (valor=%r): %s — usando 1.0",
+            BIN_SIZE_CELL, locals().get("valor"), exc,
+        )
+    return 1.0
+
+
+def _detectar_colunas_bin(df: pd.DataFrame) -> List[str]:
+    """Detecta dinamicamente todas as colunas Bin presentes no DataFrame.
+
+    Ordena numericamente para garantir Bin1, Bin2, ..., Bin10
+    (e não Bin1, Bin10, Bin2 como faria uma ordenação alfabética).
+    """
+    def _chave_numerica(nome: str) -> int:
+        digitos = "".join(filter(str.isdigit, nome))
+        return int(digitos) if digitos else 0
+
+    colunas = [col for col in df.columns if str(col).upper().startswith("BIN")]
+    return sorted(colunas, key=_chave_numerica)
+
+
 def _normalize_day_column(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Normaliza a coluna 'DAY': remove sufixo '.0', converte para inteiro,
-    e descarta linhas com valores inválidos.
-    """
-    df["DAY"] = (
-        df["DAY"]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-    )
+    """Normaliza a coluna DAY: remove sufixo '.0', converte para inteiro,
+    e descarta linhas com valores inválidos."""
+    df["DAY"] = df["DAY"].astype(str).str.replace(".0", "", regex=False)
     df["DAY"] = pd.to_numeric(df["DAY"], errors="coerce")
-    df = df.dropna(subset=["DAY"])
-    return df
+    return df.dropna(subset=["DAY"])
 
 
-def _calculate_bin_sum(df: pd.DataFrame) -> pd.DataFrame:
+def _ordinal_pt(n: int) -> str:
+    """Retorna o ordinal em português para o índice 1-based n (ex: '1º', '2º')."""
+    return f"{n}º"
+
+
+def _formatar_bin_size(bin_size: float) -> str:
+    """Formata bin_size como inteiro se for número inteiro (ex: 60.0 → '60')."""
+    return str(int(bin_size)) if bin_size == int(bin_size) else str(bin_size)
+
+
+def _build_headers(n_bins: int, bin_size: float) -> Tuple[List[str], List[str]]:
+    """Constrói os cabeçalhos de exibição para colunas de distância e velocidade por bin.
+
+    Retorna (dist_headers, vel_headers), ambos com n_bins entradas.
+    Exemplo para bin_size=60, n_bins=2:
+        dist_headers = ['1º 60s (mm)', '2º 60s (mm)']
+        vel_headers  = ['1º 60s Vm (mm/s)', '2º 60s Vm (mm/s)']
     """
-    Calcula a soma de Bin1 + Bin2 (ou apenas Bin1 se Bin2 não existir).
-    Valores não numéricos são tratados como 0.
-    """
-    df["Bin1"] = pd.to_numeric(df["Bin1"], errors="coerce").fillna(0)
-
-    if "Bin2" in df.columns:
-        df["Bin2"] = pd.to_numeric(df["Bin2"], errors="coerce").fillna(0)
-        df["Bin_Soma"] = df["Bin1"] + df["Bin2"]
-    else:
-        df["Bin_Soma"] = df["Bin1"]
-
-    return df
+    bs = _formatar_bin_size(bin_size)
+    dist_headers = [f"{_ordinal_pt(i + 1)} {bs}s (mm)"       for i in range(n_bins)]
+    vel_headers  = [f"{_ordinal_pt(i + 1)} {bs}s Vm (mm/s)"  for i in range(n_bins)]
+    return dist_headers, vel_headers
 
 
-def _merge_distance_velocity(
+def _processar_dia(
     df: pd.DataFrame,
-    day: int,
+    dia: int,
+    colunas_bin: List[str],
+    bin_size: float,
 ) -> pd.DataFrame:
-    """
-    Para um dia específico, filtra os eventos de distância e velocidade,
-    faz o merge por (DAY, ANIMAL) e mantém apenas as colunas de interesse.
+    """Processa distância e velocidade de um dia, gerando uma linha por animal.
 
-    Adiciona coluna de distância em metros (Bin_Soma / 1000).
-    """
-    distance_data = df[
-        (df[MEASURE_COLUMN] == EVENT_DISTANCE) & (df["DAY"] == day)
-    ]
-    velocity_data = df[
-        (df[MEASURE_COLUMN] == EVENT_VELOCITY) & (df["DAY"] == day)
-    ]
+    Estrutura interna do DataFrame retornado (renomeada na formatação):
+      DAY, ANIMAL,
+      dist_Bin1 ... dist_BinN,
+      Distancia_Total, Distancia_Metros,
+      vel_Bin1 ... vel_BinN,
+      Velocidade_Media
 
-    if distance_data.empty and velocity_data.empty:
+    Velocidade Média = Distância Total / (Bins Preenchidos * Bin Size)
+    — nunca média simples das velocidades de bins individuais (CLAUDE.md).
+    """
+    dados_dist = df[
+        (df[MEASURE_COLUMN] == EVENT_DISTANCE) & (df["DAY"] == dia)
+    ].copy()
+
+    dados_vel = df[
+        (df[MEASURE_COLUMN] == EVENT_VELOCITY) & (df["DAY"] == dia)
+    ].copy()
+
+    if dados_dist.empty:
         return pd.DataFrame()
 
-    df_merged = pd.merge(
-        distance_data,
-        velocity_data,
-        on=MERGE_KEYS,
-        suffixes=("_dist", "_vel"),
-    )
+    # Converte bins para numérico
+    for col in colunas_bin:
+        dados_dist[col] = pd.to_numeric(dados_dist[col], errors="coerce").fillna(0)
 
-    # Mantém apenas as colunas que existem no merge
-    available_columns = [col for col in OUTPUT_COLUMNS if col in df_merged.columns]
-    df_merged = df_merged.reindex(columns=available_columns)
+    if not dados_vel.empty:
+        for col in colunas_bin:
+            dados_vel[col] = pd.to_numeric(dados_vel[col], errors="coerce").fillna(0)
 
-    # Calcula distância em metros
-    if "Bin_Soma_dist" in df_merged.columns:
-        insert_pos = df_merged.columns.get_loc("Bin_Soma_dist") + 1
-        df_merged.insert(insert_pos, "Bin_Soma_dist_blank", "")
-        df_merged["Bin_Soma_dist_blank"] = df_merged["Bin_Soma_dist"] / MM_TO_METERS_DIVISOR
+    rows = []
+    for _, dist_row in dados_dist.iterrows():
+        animal = dist_row["ANIMAL"]
 
-    return df_merged
+        # Distância por bin
+        dist_bins = [float(dist_row[col]) for col in colunas_bin]
+        dist_total = sum(dist_bins)
+        bins_preenchidos = sum(1 for v in dist_bins if v > 0)
+
+        # Velocidade por bin (evento Velocity Average do Topscan)
+        vel_bins = [0.0] * len(colunas_bin)
+        if not dados_vel.empty:
+            vel_match = dados_vel[dados_vel["ANIMAL"] == animal]
+            if not vel_match.empty:
+                vel_bins = [float(vel_match.iloc[0][col]) for col in colunas_bin]
+
+        # Velocidade média: Distância Total / (Bins Preenchidos * Bin Size)
+        velocidade_media = (
+            dist_total / (bins_preenchidos * bin_size)
+            if bins_preenchidos > 0 and bin_size > 0
+            else 0.0
+        )
+
+        row: dict = {
+            "DAY":    dist_row["DAY"],
+            "ANIMAL": animal,
+        }
+        for i, col in enumerate(colunas_bin):
+            row[f"dist_{col}"] = dist_bins[i]
+        row["Distancia_Total"]  = dist_total
+        row["Distancia_Metros"] = dist_total / MM_TO_METERS_DIVISOR
+        for i, col in enumerate(colunas_bin):
+            row[f"vel_{col}"] = vel_bins[i]
+        row["Velocidade_Media"] = velocidade_media
+
+        rows.append(row)
+
+    return pd.DataFrame(rows)
 
 
-def _apply_worksheet_formatting(ws: Worksheet) -> None:
-    """Aplica formatação visual profissional à planilha Excel."""
-    # Larguras de colunas
-    for col_letter, width in COLUMN_WIDTHS.items():
-        ws.column_dimensions[col_letter].width = width
+def _apply_worksheet_formatting(
+    ws: Worksheet,
+    colunas_bin: List[str],
+    bin_size: float,
+) -> None:
+    """Renomeia cabeçalhos para nomes de exibição e aplica formatação visual.
 
-    # Renomear cabeçalhos
+    O mapa de renomeação é construído dinamicamente com base em bin_size e n_bins,
+    garantindo cabeçalhos no formato '1º 60s (mm)' / '1º 60s Vm (mm/s)'.
+    """
+    n_bins = len(colunas_bin)
+    dist_headers, vel_headers = _build_headers(n_bins, bin_size)
+
+    # Mapa: nome interno do DataFrame → nome de exibição na planilha
+    rename_map: dict = {
+        "DAY":             "Dia",
+        "ANIMAL":          "Animal",
+        "Distancia_Total":  "Distância Total (mm)",
+        "Distancia_Metros": "Distância Total (m)",
+        "Velocidade_Media": "Velocidade Média (mm/s)",
+    }
+    for i, col in enumerate(colunas_bin):
+        rename_map[f"dist_{col}"] = dist_headers[i]
+        rename_map[f"vel_{col}"]  = vel_headers[i]
+
+    # Renomeia linha de cabeçalho (row 1)
     for cell in ws[1]:
-        if cell.value in COLUMN_RENAMES:
-            cell.value = COLUMN_RENAMES[cell.value]
+        if cell.value in rename_map:
+            cell.value = rename_map[cell.value]
 
-    # Estilização de todas as células
+    # ─── Larguras dinâmicas ───────────────────────────────────
+    # A=Dia, B=Animal
+    ws.column_dimensions["A"].width = WIDTH_DIA
+    ws.column_dimensions["B"].width = WIDTH_ANIMAL
+
+    col_dist_inicio = 3  # coluna C
+    for i in range(n_bins):
+        ws.column_dimensions[get_column_letter(col_dist_inicio + i)].width = WIDTH_BIN_DIST
+
+    col_total  = col_dist_inicio + n_bins
+    col_metros = col_total + 1
+    ws.column_dimensions[get_column_letter(col_total)].width  = WIDTH_TOTAL_MM
+    ws.column_dimensions[get_column_letter(col_metros)].width = WIDTH_TOTAL_M
+
+    col_vel_inicio = col_metros + 1
+    for i in range(n_bins):
+        ws.column_dimensions[get_column_letter(col_vel_inicio + i)].width = WIDTH_BIN_VEL
+
+    col_vel_media = col_vel_inicio + n_bins
+    ws.column_dimensions[get_column_letter(col_vel_media)].width = WIDTH_VEL_MEDIA
+
+    # ─── Estilo de todas as células ──────────────────────────
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column):
         for cell in row:
             cell.alignment = CENTERED
             if cell.row == 1:
-                cell.font = HEADER_FONT
+                cell.font   = HEADER_FONT
                 cell.border = HEADER_BORDER
 
 
@@ -172,8 +293,12 @@ def organizar(
     """
     Organiza dados de distância/velocidade do Topscan em abas por dia.
 
-    Lê a aba 'Bin Measure' do arquivo Excel, calcula Bin1+Bin2,
-    separa por dia, e cria uma aba formatada para cada dia no workbook.
+    Lê o Bin Size da célula B3, detecta automaticamente todas as colunas
+    Bin, e calcula a velocidade real (não uma média de médias).
+
+    Cada aba representa um dia e contém:
+      Dia | Animal | Dist por Bin... | Distância Total (mm) |
+      Distância Total (m) | Vel por Bin... | Velocidade Média (mm/s)
 
     Args:
         caminho_arquivo: Caminho completo do arquivo Excel do Topscan.
@@ -182,40 +307,46 @@ def organizar(
     Returns:
         Lista com os dias únicos processados (inteiros), ou lista vazia em caso de erro.
     """
-    # Carregamento dos dados
+    bin_size = _ler_bin_size(caminho_arquivo)
+    logger.info("Bin Size lido da planilha: %.4f s", bin_size)
+
     try:
         df = pd.read_excel(
             caminho_arquivo,
             header=TOPSCAN_HEADER_ROW,
             sheet_name=SHEET_NAME,
         )
+    except PermissionError:
+        raise  # main.py trata com QMessageBox
     except Exception as exc:
         logger.error("Erro ao ler a aba '%s': %s", SHEET_NAME, exc)
         return []
 
-    # Pré-processamento
-    df = _normalize_day_column(df)
-    df = _calculate_bin_sum(df)
+    colunas_bin = _detectar_colunas_bin(df)
+    if not colunas_bin:
+        logger.error("Nenhuma coluna Bin encontrada na aba '%s'.", SHEET_NAME)
+        return []
+    logger.info("Bins detectados (%d): %s", len(colunas_bin), colunas_bin)
 
+    df = _normalize_day_column(df)
     unique_days = sorted(df["DAY"].unique().astype(int))
 
-    # Processamento por dia
-    for day in unique_days:
-        # Criar aba ANTES de verificar dados (mantém compatibilidade com o original)
-        ws = _get_or_create_sheet(workbook, str(day))
+    for dia in unique_days:
+        ws = _get_or_create_sheet(workbook, str(dia))
 
-        df_day = _merge_distance_velocity(df, day)
+        df_dia = _processar_dia(df, dia, colunas_bin, bin_size)
 
-        if df_day.empty:
-            logger.debug("Dia %d sem dados de distância/velocidade, pulando.", day)
+        if df_dia.empty:
+            logger.debug("Dia %d sem dados de distância, pulando.", dia)
             continue
 
-        # Escrever dados na aba
-        for row in dataframe_to_rows(df_day, index=False, header=True):
+        for row in dataframe_to_rows(df_dia, index=False, header=True):
             ws.append(row)
 
-        # Formatação visual
-        _apply_worksheet_formatting(ws)
-        logger.info("Dia %d processado com sucesso.", day)
+        _apply_worksheet_formatting(ws, colunas_bin, bin_size)
+        logger.info(
+            "Dia %d processado com sucesso (%d bins, bin_size=%.4f s).",
+            dia, len(colunas_bin), bin_size,
+        )
 
     return unique_days
