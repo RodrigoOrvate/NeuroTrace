@@ -1,39 +1,24 @@
 # ============================================================
 #  NeuroTrace — Build macOS (.app + .dmg)
-#  Gera instaladores DMG para três arquiteturas via matrix:
-#    • macos-12  → Intel x86_64 (Monterey — compatível com macOS 12+)
-#    • macos-13  → Intel x86_64 (Ventura  — compatível com macOS 13+)
-#    • macos-14  → Apple Silicon ARM64 (Sonoma — compatível com macOS 14+)
+#  Gera um único DMG Intel (x86_64) compatível com macOS 12+.
+#  Em Macs Apple Silicon (M1/M2/M3), roda via Rosetta 2.
+#
+#  Runners removidos pelo GitHub:
+#    • macos-12 — removido em janeiro/2025
+#    • macos-13 — removido em dezembro/2025
 # ============================================================
 
 name: Build macOS DMG
 
 on:
-  # Disparar manualmente pelo GitHub (botão "Run workflow")
   workflow_dispatch:
-
-  # Disparar automaticamente ao criar uma release
   release:
     types: [created]
 
 jobs:
   build-macos:
-    strategy:
-      fail-fast: false   # um build com falha não cancela os outros
-      matrix:
-        include:
-          - os: macos-12
-            arch_label: Intel_Monterey
-            arch_desc: "Intel x86_64 — macOS 12 Monterey e superiores"
-          - os: macos-13
-            arch_label: Intel_Ventura
-            arch_desc: "Intel x86_64 — macOS 13 Ventura e superiores"
-          - os: macos-14
-            arch_label: AppleSilicon_Sonoma
-            arch_desc: "Apple Silicon ARM64 — macOS 14 Sonoma e superiores"
-
-    runs-on: ${{ matrix.os }}
-    name: Build DMG (${{ matrix.arch_label }})
+    runs-on: macos-15-intel
+    name: Build DMG (Intel — macOS 12+)
     timeout-minutes: 45
 
     steps:
@@ -50,36 +35,26 @@ jobs:
       # ─── 3. Cache de dependências pip ───
       - name: Cache pip
         uses: actions/cache@v4
-        id: pip-cache
         with:
           path: ~/Library/Caches/pip
-          # Chave inclui o SO e os pacotes fixos — invalida ao trocar versão
-          key: ${{ matrix.os }}-pip-pyside6-pyinstaller-v1
+          key: macos-15-intel-pip-pyside6-pyinstaller-v1
           restore-keys: |
-            ${{ matrix.os }}-pip-
+            macos-15-intel-pip-
 
       # ─── 4. Instalar dependências ───
       - name: Instalar dependências Python
         timeout-minutes: 20
         run: |
-          echo "▶ Runner: ${{ matrix.os }} (${{ matrix.arch_desc }})"
           python -m pip install --upgrade pip
-
-          # --prefer-binary evita compilação de source packages (mais rápido)
           pip install --prefer-binary PySide6 pandas openpyxl requests pyinstaller
-
-          # Verificar se PySide6 importa corretamente
           python -c "from PySide6.QtWidgets import QApplication; print('✅ PySide6 OK')"
           python -c "import PyInstaller; print('✅ PyInstaller', PyInstaller.__version__)"
 
-      # ─── 5. Converter ícone .ico para .icns (macOS) ───
+      # ─── 5. Converter ícone .ico para .icns ───
       - name: Converter ícone para .icns
         run: |
           mkdir -p NeuroTrace.iconset
-
-          # Usar sips para converter .ico -> .png e gerar os tamanhos necessários
           sips -s format png memorylab.ico --out icon_base.png
-
           sips -z 16 16     icon_base.png --out NeuroTrace.iconset/icon_16x16.png
           sips -z 32 32     icon_base.png --out NeuroTrace.iconset/icon_16x16@2x.png
           sips -z 32 32     icon_base.png --out NeuroTrace.iconset/icon_32x32.png
@@ -90,17 +65,17 @@ jobs:
           sips -z 512 512   icon_base.png --out NeuroTrace.iconset/icon_256x256@2x.png
           sips -z 512 512   icon_base.png --out NeuroTrace.iconset/icon_512x512.png
           sips -z 1024 1024 icon_base.png --out NeuroTrace.iconset/icon_512x512@2x.png
-
           iconutil -c icns NeuroTrace.iconset -o memorylab.icns
-
           echo "✅ Ícone .icns criado"
           ls -lh memorylab.icns
 
       # ─── 6. Gerar .app com PyInstaller ───
       - name: Gerar .app bundle com PyInstaller
         timeout-minutes: 15
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
         run: |
-          echo "▶ Iniciando PyInstaller..."
+          echo "▶ Iniciando PyInstaller (deployment target: 12.0)..."
           python -m PyInstaller packaging/main_macos.spec --clean --noconfirm
           echo "✅ PyInstaller concluído"
 
@@ -112,33 +87,26 @@ jobs:
             ls -la dist/ || echo "(pasta dist não encontrada)"
             exit 1
           fi
-          echo "✅ .app bundle criado com sucesso (${{ matrix.arch_desc }})"
+          echo "✅ .app bundle criado"
           du -sh dist/NeuroTrace.app
 
-      # ─── 8. Criar o .dmg com sufixo de arquitetura ───
+      # ─── 8. Criar o .dmg ───
       - name: Criar .dmg installer
         timeout-minutes: 10
         run: |
           APP_NAME="NeuroTrace"
           VERSION="2.0.0"
-          DMG_NAME="${APP_NAME}_macOS_v${VERSION}_${{ matrix.arch_label }}"
+          DMG_NAME="${APP_NAME}_macOS_v${VERSION}"
           DMG_DIR="dmg_staging"
           DMG_OUTPUT="installer_output/${DMG_NAME}.dmg"
 
-          # Preparar staging
           rm -rf "${DMG_DIR}"
           mkdir -p "${DMG_DIR}"
           mkdir -p "installer_output"
 
-          # Copiar .app para staging
           cp -R "dist/${APP_NAME}.app" "${DMG_DIR}/"
-
-          # Criar symlink para /Applications
           ln -s /Applications "${DMG_DIR}/Applications"
 
-          echo "▶ Criando DMG: ${DMG_OUTPUT}"
-
-          # Criar .dmg
           hdiutil create \
             -volname "${APP_NAME}" \
             -srcfolder "${DMG_DIR}" \
@@ -147,21 +115,19 @@ jobs:
             -imagekey zlib-level=9 \
             "${DMG_OUTPUT}"
 
-          # Limpar staging
           rm -rf "${DMG_DIR}"
-
           echo "✅ DMG criado: ${DMG_OUTPUT}"
           ls -lh "${DMG_OUTPUT}"
 
-      # ─── 9. Upload do .dmg como artefato individual ───
+      # ─── 9. Upload como artefato ───
       - name: Upload DMG como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: NeuroTrace_macOS_DMG_${{ matrix.arch_label }}
+          name: NeuroTrace_macOS_DMG
           path: installer_output/*.dmg
           retention-days: 90
 
-      # ─── 10. Anexar à Release (se disparado por release) ───
+      # ─── 10. Anexar à Release ───
       - name: Anexar DMG à Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2

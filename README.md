@@ -62,15 +62,9 @@ Se preferir não instalar, pode usar o executável diretamente.
 
 #### Opção 1 — Instalador .dmg (Recomendado)
 
-Existem três versões do instalador. Escolha a correspondente ao seu Mac:
+Há um único instalador compatível com todos os Macs (Intel e Apple Silicon via Rosetta 2), a partir do macOS 12:
 
-| Arquivo | Para quem é |
-|---|---|
-| `NeuroTrace_macOS_v2.0.0_AppleSilicon_Sonoma.dmg` | Macs com chip **Apple Silicon** (M1, M2, M3…) — macOS 14+ |
-| `NeuroTrace_macOS_v2.0.0_Intel_Ventura.dmg` | Macs **Intel** com macOS **13** Ventura ou superior |
-| `NeuroTrace_macOS_v2.0.0_Intel_Monterey.dmg` | Macs **Intel** com macOS **12** Monterey |
-
-> **Não sabe qual é o seu?** Clique no menu Apple () → **"Sobre este Mac"**. Se aparecer "Apple M1/M2/M3", use o AppleSilicon. Caso contrário, veja a versão do macOS e escolha Intel_Ventura (13+) ou Intel_Monterey (12).
+**`NeuroTrace_macOS_v2.0.0.dmg`**
 
 **Como instalar:**
 1. Acesse a **[página de Releases](https://github.com/RodrigoOrvate/NeuroTrace/releases/latest)**
@@ -80,7 +74,7 @@ Existem três versões do instalador. Escolha a correspondente ao seu Mac:
 
 > **Nota:** Como o app não é assinado com certificado Apple Developer, o macOS pode bloquear a execução. Se aparecer a mensagem _"não pode ser aberto porque o desenvolvedor não pode ser verificado"_, vá em **Ajustes do Sistema → Privacidade e Segurança** e clique em **"Abrir Mesmo Assim"**.
 
-> **Atualizações automáticas:** O NeuroTrace detecta automaticamente a versão do seu macOS e baixa o DMG correto ao atualizar. Nenhuma escolha manual é necessária.
+> **Atualizações automáticas:** O NeuroTrace detecta automaticamente a arquitetura do seu Mac (Apple Silicon ou Intel) e baixa o DMG correto ao atualizar. Nenhuma escolha manual é necessária.
 
 #### Opção 2 — Executar a partir do código-fonte
 

@@ -13,7 +13,6 @@ Também exibe "O que há de novo" na primeira abertura após uma atualização.
 import json
 import os
 import sys
-import platform
 import tempfile
 import subprocess
 import shutil
@@ -37,24 +36,6 @@ IS_WINDOWS = sys.platform == "win32"
 IS_MACOS   = sys.platform == "darwin"
 
 
-def _get_macos_arch_label() -> str:
-    """Detecta a versão do macOS e a arquitetura para escolher o DMG correto.
-
-    Retorna um dos três labels usados no nome dos arquivos de release:
-      • 'AppleSilicon_Sonoma'  — máquinas Apple Silicon (M1/M2/M3, arm64)
-      • 'Intel_Monterey'       — Intel com macOS 12
-      • 'Intel_Ventura'        — Intel com macOS 13 ou superior (padrão)
-    """
-    if platform.machine() == "arm64":
-        return "AppleSilicon_Sonoma"
-    try:
-        mac_ver_str = platform.mac_ver()[0]        # ex: "12.7.1"
-        major = int(mac_ver_str.split(".")[0])
-        if major <= 12:
-            return "Intel_Monterey"
-    except Exception:
-        pass
-    return "Intel_Ventura"
 
 # Cores reutilizadas do main.py
 COLORS = {
@@ -284,23 +265,14 @@ class CheckUpdateThread(QThread):
     def _find_asset(self, assets: list) -> tuple:
         win_installer  = ""
         win_standalone = ""
-        mac_dmg_match  = ""   # DMG da arquitetura exata desta máquina
-        mac_dmg_any    = ""   # Qualquer DMG como fallback
+        mac_dmg_any    = ""
         mac_zip        = ""
-
-        if IS_MACOS:
-            arch_label = _get_macos_arch_label()
-        else:
-            arch_label = ""
 
         for asset in assets:
             name = asset["name"].lower()
             url  = asset["browser_download_url"]
             if name.endswith(".dmg"):
                 mac_dmg_any = url
-                # Verifica se o nome contém o label da arquitetura desta máquina
-                if arch_label and arch_label.lower() in name:
-                    mac_dmg_match = url
             elif name.endswith(".zip") and ("macos" in name or "mac" in name):
                 mac_zip = url
             elif name.endswith(".exe"):
@@ -310,10 +282,8 @@ class CheckUpdateThread(QThread):
                     win_standalone = url
 
         if IS_MACOS:
-            # Prefere o DMG específico da arquitetura; cai no genérico se não achar
-            if mac_dmg_match: return mac_dmg_match, "mac_dmg"
-            if mac_dmg_any:   return mac_dmg_any,   "mac_dmg"
-            if mac_zip:       return mac_zip,        "mac_zip"
+            if mac_dmg_any: return mac_dmg_any, "mac_dmg"
+            if mac_zip:     return mac_zip,      "mac_zip"
             return "", ""
         else:
             # Separa com marcador inequívoco para não confundir com URLs
@@ -697,10 +667,9 @@ class UpdateDialog(QDialog):
             # Não usa _get_update_dir() para não criar pasta _update nem misturar com o fluxo standalone.
             self.temp_path = os.path.join(tempfile.gettempdir(), f"NeuroTrace_Setup_v{ver}.exe")
         elif self.asset_type == "mac_dmg":
-            arch_label = _get_macos_arch_label()
             self.temp_path = os.path.join(
                 tempfile.gettempdir(),
-                f"NeuroTrace_macOS_v{ver}_{arch_label}.dmg"
+                f"NeuroTrace_macOS_v{ver}.dmg"
             )
         elif self.asset_type == "mac_zip":
             self.temp_path = os.path.join(
