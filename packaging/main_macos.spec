@@ -20,6 +20,7 @@ a = Analysis(
         (os.path.join(ROOT, 'updater.py'), '.'),
     ],
     hiddenimports=[
+        'secrets',
         'pandas',
         'pandas._libs.lib',
         'pandas._libs.tslibs.timestamps',
