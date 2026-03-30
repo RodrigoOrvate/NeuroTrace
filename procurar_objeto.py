@@ -76,8 +76,12 @@ def procurar(
     # ─── Carregamento e Normalização ──────────────────────────
     df = pd.read_excel(caminho_arquivo1, header=TOPSCAN_HEADER_ROW)
 
+    # Garante que colunas de string não contenham floats NaN antes de qualquer filtragem
+    df['OBJECTS'] = df['OBJECTS'].fillna('')
+    df['Events'] = df['Events'].fillna('')
+
     df['DAY'] = df['DAY'].astype(str)
-    df['DAY'] = df['DAY'].apply(lambda x: x[:-2] if x.endswith('.0') else x)
+    df['DAY'] = df['DAY'].apply(lambda x: str(x)[:-2] if str(x).endswith('.0') else str(x))
     df['DAY'] = df['DAY'].map(lambda x: int(x) if x.isdigit() else x)
 
     objeto_desejado = f'{primeiro_objeto}{segundo_objeto}'
@@ -94,7 +98,7 @@ def procurar(
 
     for evento_desejado in eventos_desejados:
         evento = f'Mouse 1 sniffing On {evento_desejado}'
-        dados_do_evento = df[(df['Events'] == evento) & (df['OBJECTS'].str.contains(objeto_desejado))]
+        dados_do_evento = df[(df['Events'] == evento) & (df['OBJECTS'].str.contains(objeto_desejado, na=False))]
 
         colunas_desejadas = ['DAY', 'ANIMAL', 'OBJECTS', 'Total Bouts', 'Total Duration(Second)', 'Latency(Second)', 'Ending time(Second) of First Bout']
 

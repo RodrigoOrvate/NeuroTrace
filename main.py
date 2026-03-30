@@ -183,6 +183,7 @@ def make_accent_button(text, icon_text=""):
     """)
     btn.setCursor(Qt.PointingHandCursor)
     btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    btn.setMinimumHeight(42)
     shadow = QGraphicsDropShadowEffect()
     shadow.setBlurRadius(18)
     shadow.setOffset(0, 4)
@@ -236,6 +237,7 @@ def make_secondary_button(text):
     """)
     btn.setCursor(Qt.PointingHandCursor)
     btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    btn.setMinimumHeight(42)
     return btn
 
 def make_github_button():
@@ -313,6 +315,7 @@ class ConjuntoCard(QFrame):
         self._setup_style()
 
     def _setup_style(self):
+        self.setMinimumHeight(160)
         self.setStyleSheet(f"""
             ConjuntoCard {{
                 background-color: {COLORS['surface']};
@@ -323,8 +326,8 @@ class ConjuntoCard(QFrame):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
 
         title = QLabel(f"📋 Planilha {self.numero}")
         title.setStyleSheet(f"""
@@ -339,29 +342,35 @@ class ConjuntoCard(QFrame):
         layout.addWidget(separator)
 
         grid = QGridLayout()
-        grid.setSpacing(8)
+        grid.setSpacing(10)
+        grid.setRowMinimumHeight(0, 38)
+        grid.setRowMinimumHeight(1, 38)
 
         lbl_par1 = QLabel("Par Objeto 1:")
         lbl_par1.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
         self.objeto1_entry = PlaceholderLineEdit("Ex: A")
+        self.objeto1_entry.setMinimumHeight(34)
         grid.addWidget(lbl_par1, 0, 0)
         grid.addWidget(self.objeto1_entry, 0, 1)
 
         lbl_par2 = QLabel("Par Objeto 2:")
         lbl_par2.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
         self.objeto2_entry = PlaceholderLineEdit("Ex: B")
+        self.objeto2_entry.setMinimumHeight(34)
         grid.addWidget(lbl_par2, 0, 2)
         grid.addWidget(self.objeto2_entry, 0, 3)
 
         lbl_obj1 = QLabel("OBJ 1:")
         lbl_obj1.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
         self.obj1_entry = PlaceholderLineEdit("Ex: 1")
+        self.obj1_entry.setMinimumHeight(34)
         grid.addWidget(lbl_obj1, 1, 0)
         grid.addWidget(self.obj1_entry, 1, 1)
 
         lbl_obj2 = QLabel("OBJ 2:")
         lbl_obj2.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
         self.obj2_entry = PlaceholderLineEdit("Ex: 2")
+        self.obj2_entry.setMinimumHeight(34)
         grid.addWidget(lbl_obj2, 1, 2)
         grid.addWidget(self.obj2_entry, 1, 3)
 
@@ -385,8 +394,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NeuroTrace — Topscan Data Organizer")
-        self.setMinimumSize(820, 780)
-        self.resize(860, 800)
+        self.setMinimumSize(820, 550)
+        self.resize(860, 680)
 
         # Estado
         self.caminho_arquivo1 = ""
@@ -481,8 +490,17 @@ class MainWindow(QMainWindow):
     # ─── Build da UI ───────────────────────────────────────────
 
     def _build_ui(self):
+        # Scroll mestre: garante acesso a todo o conteúdo em telas pequenas
+        outer_scroll = QScrollArea()
+        outer_scroll.setWidgetResizable(True)
+        outer_scroll.setFrameShape(QFrame.NoFrame)
+        outer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        outer_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.setCentralWidget(outer_scroll)
+
         central = QWidget()
-        self.setCentralWidget(central)
+        central.setStyleSheet(f"background-color: {COLORS['bg']};")
+        outer_scroll.setWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(28, 20, 28, 20)
         main_layout.setSpacing(16)
@@ -599,7 +617,8 @@ class MainWindow(QMainWindow):
         # ─── Seção 3: Scroll de Conjuntos ───
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setMinimumHeight(100)
+        self.scroll_area.setMinimumHeight(180)
+        self.scroll_area.setMaximumHeight(450)
         self.scroll_area.setStyleSheet(f"""
             QScrollArea {{
                 background: {COLORS['bg']};
@@ -744,7 +763,20 @@ class MainWindow(QMainWindow):
                     obj1.upper(), obj2.upper(), o1.upper(), o2.upper(),
                     self.caminho_arquivo1, self.global_workbook, self.colunas_desejadas
                 )
-            self.global_workbook.save(self.global_excel_filename_obj)
+            try:
+                self.global_workbook.save(self.global_excel_filename_obj)
+            except PermissionError:
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                nome_alt = f"dados_filtrados_obj_{timestamp}.xlsx"
+                self.global_workbook.save(nome_alt)
+                self.global_excel_filename_obj = nome_alt
+                QMessageBox.warning(
+                    self, "Arquivo em Uso",
+                    "O arquivo 'dados_filtrados_obj.xlsx' está bloqueado\n"
+                    "(provavelmente aberto no Excel).\n\n"
+                    f"Os dados foram salvos como:\n{nome_alt}"
+                )
             self._mostrar_sucesso()
         except Exception as e:
             self._mostrar_erro(f"Erro ao processar objetos:\n{str(e)}")
@@ -755,7 +787,20 @@ class MainWindow(QMainWindow):
             organizar(self.caminho_arquivo2, self.global_workbook)
             if 'Sheet' in self.global_workbook.sheetnames:
                 del self.global_workbook['Sheet']
-            self.global_workbook.save(self.global_excel_filename_distvel)
+            try:
+                self.global_workbook.save(self.global_excel_filename_distvel)
+            except PermissionError:
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                nome_alt = f"dados_filtrados_distvel_{timestamp}.xlsx"
+                self.global_workbook.save(nome_alt)
+                self.global_excel_filename_distvel = nome_alt
+                QMessageBox.warning(
+                    self, "Arquivo em Uso",
+                    "O arquivo 'dados_filtrados_distvel.xlsx' está bloqueado\n"
+                    "(provavelmente aberto no Excel).\n\n"
+                    f"Os dados foram salvos como:\n{nome_alt}"
+                )
             self._mostrar_sucesso()
         except Exception as e:
             self._mostrar_erro(f"Erro ao organizar Dist/Vel:\n{str(e)}")
