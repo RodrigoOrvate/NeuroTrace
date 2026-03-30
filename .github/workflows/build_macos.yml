@@ -22,18 +22,19 @@ jobs:
       fail-fast: false   # um build com falha não cancela os outros
       matrix:
         include:
-          - runner: macos-12
+          - os: macos-12
             arch_label: Intel_Monterey
             arch_desc: "Intel x86_64 — macOS 12 Monterey e superiores"
-          - runner: macos-13
+          - os: macos-13
             arch_label: Intel_Ventura
             arch_desc: "Intel x86_64 — macOS 13 Ventura e superiores"
-          - runner: macos-14
+          - os: macos-14
             arch_label: AppleSilicon_Sonoma
             arch_desc: "Apple Silicon ARM64 — macOS 14 Sonoma e superiores"
 
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.os }}
     name: Build DMG (${{ matrix.arch_label }})
+    timeout-minutes: 45
 
     steps:
       # ─── 1. Checkout do código ───
@@ -45,18 +46,33 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
-      # ─── 3. Instalar dependências ───
+      # ─── 3. Cache de dependências pip ───
+      - name: Cache pip
+        uses: actions/cache@v4
+        id: pip-cache
+        with:
+          path: ~/Library/Caches/pip
+          # Chave inclui o SO e os pacotes fixos — invalida ao trocar versão
+          key: ${{ matrix.os }}-pip-pyside6-pyinstaller-v1
+          restore-keys: |
+            ${{ matrix.os }}-pip-
+
+      # ─── 4. Instalar dependências ───
       - name: Instalar dependências Python
+        timeout-minutes: 20
         run: |
+          echo "▶ Runner: ${{ matrix.os }} (${{ matrix.arch_desc }})"
           python -m pip install --upgrade pip
-          # PySide6 tem suporte nativo a macOS ARM (ao contrário de PyQt5)
-          pip install PySide6 pandas openpyxl requests pyinstaller
+
+          # --prefer-binary evita compilação de source packages (mais rápido)
+          pip install --prefer-binary PySide6 pandas openpyxl requests pyinstaller
+
           # Verificar se PySide6 importa corretamente
           python -c "from PySide6.QtWidgets import QApplication; print('✅ PySide6 OK')"
+          python -c "import PyInstaller; print('✅ PyInstaller', PyInstaller.__version__)"
 
-      # ─── 4. Converter ícone .ico para .icns (macOS) ───
+      # ─── 5. Converter ícone .ico para .icns (macOS) ───
       - name: Converter ícone para .icns
         run: |
           mkdir -p NeuroTrace.iconset
@@ -77,26 +93,31 @@ jobs:
 
           iconutil -c icns NeuroTrace.iconset -o memorylab.icns
 
-          echo "✅ Ícone .icns criado (${{ matrix.arch_desc }})"
+          echo "✅ Ícone .icns criado"
           ls -lh memorylab.icns
 
-      # ─── 5. Gerar .app com PyInstaller ───
+      # ─── 6. Gerar .app com PyInstaller ───
       - name: Gerar .app bundle com PyInstaller
+        timeout-minutes: 15
         run: |
+          echo "▶ Iniciando PyInstaller..."
           python -m PyInstaller packaging/main_macos.spec --clean --noconfirm
+          echo "✅ PyInstaller concluído"
 
-      # ─── 6. Verificar se o .app foi criado ───
+      # ─── 7. Verificar se o .app foi criado ───
       - name: Verificar .app bundle
         run: |
           if [ ! -d "dist/NeuroTrace.app" ]; then
-            echo "ERRO: Falha ao criar o .app bundle"
+            echo "❌ ERRO: Falha ao criar o .app bundle"
+            ls -la dist/ || echo "(pasta dist não encontrada)"
             exit 1
           fi
           echo "✅ .app bundle criado com sucesso (${{ matrix.arch_desc }})"
-          ls -la dist/
+          du -sh dist/NeuroTrace.app
 
-      # ─── 7. Criar o .dmg com sufixo de arquitetura ───
+      # ─── 8. Criar o .dmg com sufixo de arquitetura ───
       - name: Criar .dmg installer
+        timeout-minutes: 10
         run: |
           APP_NAME="NeuroTrace"
           VERSION="2.0.0"
@@ -115,6 +136,8 @@ jobs:
           # Criar symlink para /Applications
           ln -s /Applications "${DMG_DIR}/Applications"
 
+          echo "▶ Criando DMG: ${DMG_OUTPUT}"
+
           # Criar .dmg
           hdiutil create \
             -volname "${APP_NAME}" \
@@ -127,11 +150,10 @@ jobs:
           # Limpar staging
           rm -rf "${DMG_DIR}"
 
-          echo ""
           echo "✅ DMG criado: ${DMG_OUTPUT}"
           ls -lh "${DMG_OUTPUT}"
 
-      # ─── 8. Upload do .dmg como artefato individual ───
+      # ─── 9. Upload do .dmg como artefato individual ───
       - name: Upload DMG como artefato
         uses: actions/upload-artifact@v4
         with:
@@ -139,7 +161,7 @@ jobs:
           path: installer_output/*.dmg
           retention-days: 90
 
-      # ─── 9. Anexar à Release (se disparado por release) ───
+      # ─── 10. Anexar à Release (se disparado por release) ───
       - name: Anexar DMG à Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
