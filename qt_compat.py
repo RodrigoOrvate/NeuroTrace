@@ -12,10 +12,11 @@ try:
         QLabel, QPushButton, QLineEdit, QScrollArea, QFrame, QFileDialog,
         QMessageBox, QGraphicsDropShadowEffect, QSpinBox, QSizePolicy,
         QGroupBox, QGridLayout, QSpacerItem,
-        QDialog, QProgressBar, QTextBrowser,
+        QDialog, QProgressBar, QTextBrowser, QCheckBox, QLayout,
     )
     from PySide6.QtCore import (  # noqa: F401
         Qt, QPropertyAnimation, QEasingCurve, QSize, Signal, QTimer, QThread,
+        QRect, QPoint,
     )
     from PySide6.QtGui import (  # noqa: F401
         QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap,
@@ -33,10 +34,11 @@ except ImportError:
         QLabel, QPushButton, QLineEdit, QScrollArea, QFrame, QFileDialog,
         QMessageBox, QGraphicsDropShadowEffect, QSpinBox, QSizePolicy,
         QGroupBox, QGridLayout, QSpacerItem,
-        QDialog, QProgressBar, QTextBrowser,
+        QDialog, QProgressBar, QTextBrowser, QCheckBox, QLayout,
     )
     from PyQt5.QtCore import (  # noqa: F401
         Qt, QPropertyAnimation, QEasingCurve, QSize, pyqtSignal, QTimer, QThread,
+        QRect, QPoint,
     )
     from PyQt5.QtGui import (  # noqa: F401
         QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap,

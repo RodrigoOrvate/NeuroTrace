@@ -42,7 +42,7 @@ O **NeuroTrace** é uma ferramenta desktop desenvolvida para automatizar a organ
 A forma mais simples de instalar o programa. O instalador configura tudo automaticamente.
 
 1. Acesse a **[página de Releases](https://github.com/RodrigoOrvate/NeuroTrace/releases/latest)**
-2. Baixe o arquivo **`NeuroTrace_Setup_v2.0.0.exe`**
+2. Baixe o arquivo **`NeuroTrace_Setup_v2.1.0.exe`**
 3. Execute o instalador e siga as instruções
 4. O programa será instalado em `C:\Program Files (x86)\NeuroTrace` e um atalho será criado na **Área de Trabalho**
 
@@ -64,7 +64,7 @@ Se preferir não instalar, pode usar o executável diretamente.
 
 Há um único instalador compatível com todos os Macs (Intel e Apple Silicon via Rosetta 2), a partir do macOS 12:
 
-**`NeuroTrace_macOS_v2.0.0.dmg`**
+**`NeuroTrace_macOS_v2.1.0.dmg`**
 
 **Como instalar:**
 1. Acesse a **[página de Releases](https://github.com/RodrigoOrvate/NeuroTrace/releases/latest)**
@@ -190,20 +190,27 @@ NeuroTrace/
 
 ## 📋 Changelog
 
+### v2.1.0
+
+- 🔍 **Nova funcionalidade de pesquisa:** Implementação de busca avançada para localizar objetos específicos na análise
+- ⏱️ **Organização Temporal:** Adição de filtragem e organização de dados baseada em intervalos de tempo personalizados.
+- 🖥️ **Otimização de Interface:** Melhor reorganização dos elementos na janela principal para um fluxo de trabalho mais intuitivo e ergonômico.
+- ⚙️ **Refinamento de Performance:** Pequenos ajustes na renderização da interface para maior estabilidade.
+
 ### v2.0.0
 
-- 🔄 **Rebranding** do programa de AUTOMATIZADO para **NeuroTrace**
-- ✨ Interface completamente redesenhada com **PyQt5** (migração do tkinter)
-- 🎨 Design moderno com **tema escuro** e paleta laboratorial
-- 🔄 Sistema de **auto-atualização** via GitHub Releases
-- 📦 **Instalador Windows** com atalho na área de trabalho
-- 🍎 **Suporte a macOS** com `.app` bundle e `.dmg` installer
-- 🧹 Refatoração completa do código com boas práticas
+- 🔄 **Rebranding** do programa de AUTOMATIZADO para **NeuroTrace**.
+- ✨ Interface completamente redesenhada com **PyQt5** (migração do tkinter).
+- 🎨 Design moderno com **tema escuro** e paleta laboratorial.
+- 🔄 Sistema de **auto-atualização** via GitHub Releases.
+- 📦 **Instalador Windows** com atalho na área de trabalho.
+- 🍎 **Suporte a macOS** com `.app` bundle e `.dmg` installer.
+- 🧹 Refatoração completa do código com boas práticas.
 
 ### v1.0.0
 
-- Versão inicial com interface tkinter
-- Funcionalidades básicas de filtragem de objetos e dist/vel
+- Versão inicial com interface tkinter.
+- Funcionalidades básicas de filtragem de objetos e dist/vel.
 
 ---
 

@@ -9,13 +9,14 @@ from qt_compat import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit, QScrollArea, QFrame, QFileDialog,
     QMessageBox, QGraphicsDropShadowEffect, QSpinBox, QSizePolicy,
-    QGroupBox, QGridLayout, QSpacerItem,
+    QGroupBox, QGridLayout, QSpacerItem, QLayout,
     Qt, QPropertyAnimation, QEasingCurve, QSize, pyqtSignal, QTimer,
     QFont, QIcon, QColor, QPalette, QFontDatabase, QPixmap,
+    QRect, QPoint,
 )
 
 # Importando as funções de processamento (inalteradas)
-from procurar_objeto import procurar
+from procurar_objeto import procurar, procurar_por_intervalo
 from procurar_distvel import organizar
 from updater import (
     check_for_updates, check_whats_new, check_internet,
@@ -240,6 +241,119 @@ def make_secondary_button(text):
     btn.setMinimumHeight(42)
     return btn
 
+class FlowLayout(QLayout):
+    """Layout que organiza widgets em linha e quebra automaticamente para a
+    próxima linha quando não há mais espaço horizontal -- evita que uma
+    fileira de botões seja cortada ou force scroll em janelas menores."""
+
+    def __init__(self, parent=None, margin=0, h_spacing=8, v_spacing=8):
+        super().__init__(parent)
+        self._h_spacing = h_spacing
+        self._v_spacing = v_spacing
+        self._items = []
+        self.setContentsMargins(margin, margin, margin, margin)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def _do_layout(self, rect, test_only):
+        margins = self.contentsMargins()
+        x = rect.x() + margins.left()
+        y = rect.y() + margins.top()
+        line_height = 0
+        max_x = rect.right() - margins.right()
+
+        for item in self._items:
+            item_size = item.sizeHint()
+            next_x = x + item_size.width() + self._h_spacing
+            if next_x - self._h_spacing > max_x and line_height > 0:
+                x = rect.x() + margins.left()
+                y = y + line_height + self._v_spacing
+                next_x = x + item_size.width() + self._h_spacing
+                line_height = 0
+
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), item_size))
+
+            x = next_x
+            line_height = max(line_height, item_size.height())
+
+        return y + line_height - rect.y() + margins.bottom()
+
+
+def make_toggle_button(text, icon_text=""):
+    """Cria um botão selecionável (checkable) no mesmo padrão visual dos
+    outros botões: contorno (outline) quando desmarcado, preenchido com o
+    gradiente accent quando marcado."""
+    btn = QPushButton(f" {icon_text} {text} " if icon_text else f" {text} ")
+    btn.setCheckable(True)
+    btn.setStyleSheet(f"""
+        QPushButton {{
+            background: transparent;
+            color: {COLORS['text_muted']};
+            border: 1.5px solid {COLORS['input_border']};
+            font-weight: 600;
+            font-size: 13px;
+            padding: 10px 22px;
+            border-radius: 8px;
+        }}
+        QPushButton:hover {{
+            border-color: {COLORS['accent']};
+            color: {COLORS['text']};
+        }}
+        QPushButton:checked {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {COLORS['accent']}, stop:1 {COLORS['accent_dark']});
+            color: #ffffff;
+            border: 1.5px solid {COLORS['accent']};
+        }}
+        QPushButton:checked:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {COLORS['accent_hover']}, stop:1 {COLORS['accent']});
+        }}
+    """)
+    btn.setCursor(Qt.PointingHandCursor)
+    btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    btn.setMinimumHeight(42)
+    return btn
+
 def make_github_button():
     """Cria o botão do GitHub com ícone SVG embutido via pixmap."""
     btn = QPushButton()
@@ -394,8 +508,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NeuroTrace — Topscan Data Organizer")
-        self.setMinimumSize(820, 550)
-        self.resize(860, 680)
+        self.setMinimumSize(900, 550)
+        self.resize(960, 680)
 
         # Estado
         self.caminho_arquivo1 = ""
@@ -502,7 +616,7 @@ class MainWindow(QMainWindow):
         outer_scroll = QScrollArea()
         outer_scroll.setWidgetResizable(True)
         outer_scroll.setFrameShape(QFrame.NoFrame)
-        outer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        outer_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         outer_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         self.setCentralWidget(outer_scroll)
 
@@ -653,14 +767,19 @@ class MainWindow(QMainWindow):
                 padding: 8px;
             }}
         """)
-        action_layout = QHBoxLayout(action_frame)
+        action_layout = FlowLayout(action_frame, h_spacing=12, v_spacing=10)
         action_layout.setContentsMargins(16, 10, 16, 10)
-        action_layout.setSpacing(12)
 
         self.procurar_obj_btn = make_accent_button("Procurar Objetos", "🔬")
         self.procurar_obj_btn.setEnabled(False)
         self.procurar_obj_btn.clicked.connect(self._procurar_objetos)
         action_layout.addWidget(self.procurar_obj_btn)
+
+        # Botão selecionável: gera os intervalos (bins) lado a lado em vez do
+        # total resumido -- só relevante para arquivos exportados em bins
+        # (ex: "bins de 15 seg"), que têm colunas Duration1, Duration2...
+        self.intervalos_checkbox = make_toggle_button("Separar por intervalos", "⏱")
+        action_layout.addWidget(self.intervalos_checkbox)
 
         self.organizar_distvel_btn = make_accent_button("Organizar Dist/Vel", "📊")
         self.organizar_distvel_btn.setEnabled(False)
@@ -676,8 +795,6 @@ class MainWindow(QMainWindow):
         self.update_btn.setEnabled(False)  # começa desabilitado até confirmar internet
         self.update_btn.clicked.connect(self._check_updates_manual)
         action_layout.addWidget(self.update_btn)
-
-        action_layout.addStretch()
 
         # Botão GitHub — dependente de internet
         self.github_btn = make_github_button()
@@ -762,15 +879,26 @@ class MainWindow(QMainWindow):
     # ─── Processamento ─────────────────────────────────────────
 
     def _procurar_objetos(self):
+        # Sempre parte de um workbook novo -- se o usuário clicar em processar
+        # mais de uma vez sem recriar os conjuntos, as abas de uma execução
+        # anterior não devem continuar dentro do arquivo (evita abas duplicadas
+        # como "A_B" e "A_B1" com o mesmo conteúdo).
+        self.global_workbook = openpyxl.Workbook()
         if 'Sheet' in self.global_workbook.sheetnames:
             del self.global_workbook['Sheet']
         try:
             for card in self.conjuntos_cards:
                 obj1, obj2, o1, o2 = card.get_values()
-                procurar(
-                    obj1.upper(), obj2.upper(), o1.upper(), o2.upper(),
-                    self.caminho_arquivo1, self.global_workbook, self.colunas_desejadas
-                )
+                if self.intervalos_checkbox.isChecked():
+                    procurar_por_intervalo(
+                        obj1.upper(), obj2.upper(), o1.upper(), o2.upper(),
+                        self.caminho_arquivo1, self.global_workbook
+                    )
+                else:
+                    procurar(
+                        obj1.upper(), obj2.upper(), o1.upper(), o2.upper(),
+                        self.caminho_arquivo1, self.global_workbook, self.colunas_desejadas
+                    )
             try:
                 self.global_workbook.save(self.global_excel_filename_obj)
             except PermissionError:
@@ -818,8 +946,12 @@ class MainWindow(QMainWindow):
     def _procurar_colunas(self, caminho):
         try:
             df      = pd.read_excel(caminho, header=6)
-            objetos = set(df['OBJECTS'].astype(str))
-            events  = set(df['Events'].astype(str))
+            # fillna('') antes do astype(str) é necessário: sem isso, células vazias
+            # podem virar NaN "de verdade" em vez da string "nan" (depende da versão
+            # do pandas), o que quebra o .strip() logo abaixo e interrompe a varredura
+            # no meio, deixando o painel incompleto (ex: só 1 par, "Nenhum OBJ encontrado").
+            objetos = set(df['OBJECTS'].fillna('').astype(str))
+            events  = set(df['Events'].fillna('').astype(str))
 
             self.pares_objetos.clear()
             for obj in objetos:
@@ -955,5 +1087,5 @@ if __name__ == "__main__":
     app.setStyleSheet(GLOBAL_STYLESHEET)
 
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec_())
