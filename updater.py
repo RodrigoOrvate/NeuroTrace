@@ -69,6 +69,25 @@ def is_frozen() -> bool:
     return getattr(sys, 'frozen', False)
 
 
+def _is_setup_install() -> bool:
+    """Indica se o exe atual veio do instalador (Setup) e não é a versão portátil.
+
+    O Inno Setup sempre grava o desinstalador (unins000.exe) ao lado do exe,
+    tanto na instalação por usuário (%LOCALAPPDATA%\\Programs\\NeuroTrace, sem
+    admin) quanto na instalação para todos (Program Files, com admin).
+    Checar só o prefixo "Program Files" não funciona para a instalação por usuário.
+    """
+    import glob
+    exe_dir = os.path.dirname(sys.executable)
+    if glob.glob(os.path.join(exe_dir, "unins*.exe")):
+        return True
+    # Fallback para instalações antigas em Program Files
+    prog_files     = os.environ.get("PROGRAMFILES",       r"C:\Program Files")
+    prog_files_x86 = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
+    exe = sys.executable.lower()
+    return exe.startswith(prog_files.lower()) or exe.startswith(prog_files_x86.lower())
+
+
 def _get_update_dir() -> str:
     """Pasta isolada para downloads de atualização no Windows.
 
@@ -726,19 +745,14 @@ class UpdateDialog(QDialog):
     # ─── Windows: Instalador Inno Setup ──────────────────────
     def _apply_win_installer(self, installer_path: str):
         # Dispara o instalador e encerra imediatamente.
-        # O Inno Setup gerencia permissões, UAC e instalação em Program Files —
-        # o Python não escreve nada em pastas do sistema nem gera arquivos .bat.
+        # O Inno Setup gerencia permissões e o local de instalação
+        # (por usuário, sem admin; ou Program Files, se a instalação anterior foi para todos).
 
         # Cenário: portátil atualizando via Setup.
         # O exe standalone ficaria órfão após a instalação — um .bat de limpeza o remove.
-        # Só faz isso quando NÃO está em Program Files; se já for instalado (Setup→Setup),
-        # sys.executable aponta para o exe do Program Files e não deve ser deletado.
-        prog_files_chk     = os.environ.get("PROGRAMFILES",       r"C:\Program Files")
-        prog_files_x86_chk = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
-        is_portable_context = not (
-            sys.executable.lower().startswith(prog_files_chk.lower()) or
-            sys.executable.lower().startswith(prog_files_x86_chk.lower())
-        )
+        # Só faz isso quando NÃO é uma instalação do Setup; se já for instalado (Setup→Setup),
+        # sys.executable aponta para o exe instalado e não deve ser deletado.
+        is_portable_context = not _is_setup_install()
         if is_frozen() and is_portable_context:
             bat_path = os.path.join(_get_update_dir(), "_nt_cleanup.bat")
             bat_content = (
@@ -771,19 +785,16 @@ class UpdateDialog(QDialog):
     def _apply_win_standalone(self, new_exe_path: str):
         current_exe = sys.executable
 
-        # Detecta se está rodando a partir de uma instalação Setup (Program Files).
-        prog_files     = os.environ.get("PROGRAMFILES",       r"C:\Program Files")
-        prog_files_x86 = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
-        running_from_setup = (
-            current_exe.lower().startswith(prog_files.lower()) or
-            current_exe.lower().startswith(prog_files_x86.lower())
-        )
+        # Detecta se está rodando a partir de uma instalação Setup
+        # (por usuário em %LOCALAPPDATA%\Programs ou para todos em Program Files).
+        running_from_setup = _is_setup_install()
 
         if running_from_setup:
             # ── Cenário: Setup → Portátil ──────────────────────────────────────
             # Move o novo exe para a Área de Trabalho do usuário com nome fixo.
-            # Atalho: com PrivilegesRequired=admin, o Inno Setup cria o atalho em
-            # {commondesktop} = C:\Users\Public\Desktop, NÃO no desktop do usuário.
+            # Atalho: na instalação para todos (admin) o Inno Setup cria o atalho em
+            # {commondesktop} = C:\Users\Public\Desktop; na instalação por usuário,
+            # no desktop do próprio usuário.
             # O bat tenta ambos os locais; falhas são suprimidas com >nul 2>&1.
             user_desktop   = _get_win_desktop()
             public_desktop = os.path.join(
@@ -812,7 +823,8 @@ class UpdateDialog(QDialog):
                 # Remove atalho do Desktop público (instalação admin) e do Desktop do usuário
                 '  del /f /q "%NT_SHORTCUT_PUB%" >nul 2>&1\n'
                 '  del /f /q "%NT_SHORTCUT_USR%" >nul 2>&1\n'
-                # Desinstala via uninstaller do Inno Setup (tem admin, remove pasta + registro)
+                # Desinstala via uninstaller do Inno Setup (remove pasta + registro;
+                # só pede admin se a instalação anterior foi para todos os usuários)
                 '  if exist "%NT_OLD_DIR%\\unins000.exe" (\n'
                 '    echo [bat] executando desinstalador >> "%NT_LOG%"\n'
                 '    start "" "%NT_OLD_DIR%\\unins000.exe" /SILENT /NORESTART\n'
