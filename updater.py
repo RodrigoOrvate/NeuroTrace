@@ -17,7 +17,7 @@ import tempfile
 import subprocess
 import shutil
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from qt_compat import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QProgressBar, QMessageBox, QSizePolicy,
@@ -173,12 +173,20 @@ def _write_last_seen_version(version: str):
 
 
 def check_internet() -> bool:
-    """Verifica rapidamente se há conexão com a internet."""
+    """Verifica rapidamente se há conexão com a internet.
+
+    Usa github.com e não a API: sem login, a API permite só 60 consultas
+    por hora por IP, e esta checagem roda a cada 10 s -- esgotava a cota
+    e desabilitava o botão "Atualizar". Qualquer resposta HTTP, mesmo de
+    erro, prova que há conexão.
+    """
     try:
-        req = Request("https://api.github.com")
+        req = Request("https://github.com", method="HEAD")
         req.add_header("User-Agent", "NeuroTrace-Updater")
         with urlopen(req, timeout=5):
             return True
+    except HTTPError:
+        return True
     except Exception:
         return False
 
@@ -274,6 +282,11 @@ class CheckUpdateThread(QThread):
             else:
                 self.no_update.emit()
 
+        except HTTPError as e:
+            # Antes do URLError (HTTPError é subclasse): o GitHub respondeu,
+            # então há internet -- ex: 403 quando a cota da API se esgota.
+            _diag_log(f"[erro] HTTPError: {e}")
+            self.error.emit(f"O GitHub recusou a consulta ({e.code}). Tente novamente mais tarde.")
         except URLError as e:
             _diag_log(f"[erro] URLError: {e}")
             self.error.emit("Sem conexão com a internet.")
