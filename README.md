@@ -42,7 +42,7 @@ O **NeuroTrace** é uma ferramenta desktop desenvolvida para automatizar a organ
 A forma mais simples de instalar o programa. O instalador configura tudo automaticamente.
 
 1. Acesse a **[página de Releases](https://github.com/RodrigoOrvate/NeuroTrace/releases/latest)**
-2. Baixe o arquivo **`NeuroTrace_Setup_v2.1.1.exe`**
+2. Baixe o arquivo **`NeuroTrace_Setup_v2.1.2.exe`**
 3. Execute o instalador e siga as instruções
 4. O programa será instalado em `C:\Program Files (x86)\NeuroTrace` e um atalho será criado na **Área de Trabalho**
 
@@ -64,7 +64,7 @@ Se preferir não instalar, pode usar o executável diretamente.
 
 Há um único instalador compatível com todos os Macs (Intel e Apple Silicon via Rosetta 2), a partir do macOS 12:
 
-**`NeuroTrace_macOS_v2.1.1.dmg`**
+**`NeuroTrace_macOS_v2.1.2.dmg`**
 
 **Como instalar:**
 1. Acesse a **[página de Releases](https://github.com/RodrigoOrvate/NeuroTrace/releases/latest)**
@@ -189,6 +189,11 @@ NeuroTrace/
 ---
 
 ## 📋 Changelog
+
+### v2.1.2
+
+- 🔄 **Botão "Atualizar" sempre disponível:** a verificação de internet não consome mais o limite de consultas do GitHub, que deixava o botão desabilitado depois de alguns minutos com o programa aberto.
+- 💬 **Mensagem de erro mais clara:** quando o GitHub recusa a consulta de atualização, o programa informa isso em vez de dizer que não há internet.
 
 ### v2.1.1
 
