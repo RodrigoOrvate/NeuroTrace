@@ -15,6 +15,11 @@ on:
   release:
     types: [created]
 
+# Necessário para anexar os arquivos à Release: o GITHUB_TOKEN
+# padrão do repositório só tem permissão de leitura.
+permissions:
+  contents: write
+
 jobs:
   build-macos:
     runs-on: macos-15-intel
@@ -24,17 +29,17 @@ jobs:
     steps:
       # ─── 1. Checkout do código ───
       - name: Checkout do repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # ─── 2. Configurar Python ───
       - name: Configurar Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
       # ─── 3. Cache de dependências pip ───
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/Library/Caches/pip
           key: macos-15-intel-pip-pyside6-pyinstaller-v1
@@ -141,7 +146,7 @@ jobs:
 
       # ─── 9. Upload como artefato ───
       - name: Upload DMG como artefato
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: NeuroTrace_macOS_DMG
           path: installer_output/*.dmg
@@ -150,6 +155,6 @@ jobs:
       # ─── 10. Anexar à Release ───
       - name: Anexar DMG à Release
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: installer_output/*.dmg
