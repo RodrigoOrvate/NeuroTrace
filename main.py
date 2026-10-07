@@ -16,7 +16,7 @@ from qt_compat import (
 )
 
 # Importando as funções de processamento (inalteradas)
-from procurar_objeto import procurar, procurar_por_intervalo
+from procurar_objeto import procurar, procurar_por_intervalo, ler_planilha_topscan
 from procurar_distvel import organizar
 from updater import (
     check_for_updates, check_whats_new, check_internet,
@@ -945,7 +945,7 @@ class MainWindow(QMainWindow):
 
     def _procurar_colunas(self, caminho):
         try:
-            df      = pd.read_excel(caminho, header=6)
+            df      = ler_planilha_topscan(caminho)
             # fillna('') antes do astype(str) é necessário: sem isso, células vazias
             # podem virar NaN "de verdade" em vez da string "nan" (depende da versão
             # do pandas), o que quebra o .strip() logo abaixo e interrompe a varredura
