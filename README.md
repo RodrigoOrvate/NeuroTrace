@@ -42,7 +42,7 @@ O **NeuroTrace** é uma ferramenta desktop desenvolvida para automatizar a organ
 A forma mais simples de instalar o programa. O instalador configura tudo automaticamente.
 
 1. Acesse a **[página de Releases](https://github.com/RodrigoOrvate/NeuroTrace/releases/latest)**
-2. Baixe o arquivo **`NeuroTrace_Setup_v2.1.0.exe`**
+2. Baixe o arquivo **`NeuroTrace_Setup_v2.1.1.exe`**
 3. Execute o instalador e siga as instruções
 4. O programa será instalado em `C:\Program Files (x86)\NeuroTrace` e um atalho será criado na **Área de Trabalho**
 
@@ -64,7 +64,7 @@ Se preferir não instalar, pode usar o executável diretamente.
 
 Há um único instalador compatível com todos os Macs (Intel e Apple Silicon via Rosetta 2), a partir do macOS 12:
 
-**`NeuroTrace_macOS_v2.1.0.dmg`**
+**`NeuroTrace_macOS_v2.1.1.dmg`**
 
 **Como instalar:**
 1. Acesse a **[página de Releases](https://github.com/RodrigoOrvate/NeuroTrace/releases/latest)**
@@ -189,6 +189,12 @@ NeuroTrace/
 ---
 
 ## 📋 Changelog
+
+### v2.1.1
+
+- 📂 **Planilhas do Topscan mais flexíveis:** os pares de objetos agora carregam mesmo quando as colunas vêm escritas em maiúsculas ou minúsculas (ex: `Objects` / `OBJECTS`).
+- 🐀 **Suporte a ratos e sessões únicas:** arquivos sem as colunas `DAY`/`DRUG` (ex: treino) e com eventos `Rat 1 sniffing` passam a ser processados normalmente.
+- 🛡️ **Instalação sem administrador:** o instalador agora instala por usuário, sem pedir permissão de administrador. Instalações antigas em Program Files continuam sendo atualizadas no mesmo lugar.
 
 ### v2.1.0
 
