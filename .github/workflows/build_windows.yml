@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: Checkout do repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configurar Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -59,14 +59,14 @@ jobs:
           Get-ChildItem -Path installer_output\
 
       - name: Upload Setup como artefato
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: NeuroTrace_Windows_Setup
           path: installer_output/*.exe
           retention-days: 90
 
       - name: Upload EXE portatil como artefato
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: NeuroTrace_Windows_Portable
           path: dist/NeuroTrace.exe
@@ -74,7 +74,7 @@ jobs:
 
       - name: Anexar arquivos a Release
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             installer_output/*.exe
