@@ -31,6 +31,7 @@ COLUNAS_CANDIDATAS = [
     'Ending time(Second) of First Bout',
 ]
 COLUNAS_ESSENCIAIS = IDENTITY_COLUMNS + ['Total Duration(Second)']
+COLUNAS_CONHECIDAS = IDENTITY_COLUMNS + ['Events', 'DRUG'] + COLUNAS_CANDIDATAS
 
 COLUMN_RENAMES = {
     'OBJECTS': 'Objetos',
@@ -56,6 +57,25 @@ HEADER_BORDER = Border(
     top=Side(style='thin'),
     bottom=Side(style='thin'),
 )
+
+
+def ler_planilha_topscan(caminho: str) -> pd.DataFrame:
+    """Lê a planilha do Topscan padronizando os nomes de coluna conhecidos
+    independentemente de maiúsculas/minúsculas (ex: 'Objects' -> 'OBJECTS')."""
+    df = pd.read_excel(caminho, header=TOPSCAN_HEADER_ROW)
+    canonicas = {c.upper(): c for c in COLUNAS_CONHECIDAS}
+    df = df.rename(columns=lambda c: canonicas.get(str(c).strip().upper(), c))
+
+    # Arquivos de sessão única (ex: treino) não trazem DAY nem DRUG.
+    for coluna in ('DAY', 'DRUG'):
+        if coluna not in df.columns:
+            df[coluna] = ''
+
+    # O Topscan grava 'Rat 1 ...' ou 'Mouse 1 ...' conforme o animal
+    # configurado; as buscas de eventos usam 'Mouse 1 ...'.
+    if 'Events' in df.columns:
+        df['Events'] = df['Events'].replace(r'^Rat 1 ', 'Mouse 1 ', regex=True)
+    return df
 
 
 def procurar(
@@ -86,7 +106,7 @@ def procurar(
         Tupla com (objeto_desejado, lista_de_eventos).
     """
     # ─── Carregamento e Normalização ──────────────────────────
-    df = pd.read_excel(caminho_arquivo1, header=TOPSCAN_HEADER_ROW)
+    df = ler_planilha_topscan(caminho_arquivo1)
 
     # Confere se as colunas essenciais (identidade + Total Duration) existem.
     # Sem elas não há como localizar dia/animal/objeto, ou não é um arquivo
@@ -291,7 +311,7 @@ def procurar_por_intervalo(
     Usada por arquivos exportados com bins (ex: 'bins de 15 seg'), que têm
     colunas 'Duration1(Second)', 'Duration2(Second)', etc.
     """
-    df = pd.read_excel(caminho_arquivo1, header=TOPSCAN_HEADER_ROW)
+    df = ler_planilha_topscan(caminho_arquivo1)
 
     faltando = [c for c in IDENTITY_COLUMNS if c not in df.columns]
     if faltando:
