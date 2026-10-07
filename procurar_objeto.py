@@ -64,7 +64,18 @@ def ler_planilha_topscan(caminho: str) -> pd.DataFrame:
     independentemente de maiúsculas/minúsculas (ex: 'Objects' -> 'OBJECTS')."""
     df = pd.read_excel(caminho, header=TOPSCAN_HEADER_ROW)
     canonicas = {c.upper(): c for c in COLUNAS_CONHECIDAS}
-    return df.rename(columns=lambda c: canonicas.get(str(c).strip().upper(), c))
+    df = df.rename(columns=lambda c: canonicas.get(str(c).strip().upper(), c))
+
+    # Arquivos de sessão única (ex: treino) não trazem DAY nem DRUG.
+    for coluna in ('DAY', 'DRUG'):
+        if coluna not in df.columns:
+            df[coluna] = ''
+
+    # O Topscan grava 'Rat 1 ...' ou 'Mouse 1 ...' conforme o animal
+    # configurado; as buscas de eventos usam 'Mouse 1 ...'.
+    if 'Events' in df.columns:
+        df['Events'] = df['Events'].replace(r'^Rat 1 ', 'Mouse 1 ', regex=True)
+    return df
 
 
 def procurar(
