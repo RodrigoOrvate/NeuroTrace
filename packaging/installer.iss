@@ -40,8 +40,14 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 ; Visual moderno
 WizardStyle=modern
-; Requer privilégios de administrador para instalar em Program Files
-PrivilegesRequired=admin
+; Instalação por usuário, SEM pedir administrador (UAC).
+; Nesse modo {autopf} vira %LOCALAPPDATA%\Programs, e {group}/{autodesktop}
+; apontam para o Menu Iniciar e a Área de Trabalho do próprio usuário.
+PrivilegesRequired=lowest
+; Quem tiver admin pode escolher "Instalar para todos os usuários" (Program Files).
+; Com UsePreviousPrivileges=yes (padrão), quem já tem a versão antiga instalada em
+; Program Files continua atualizando lá, sem criar uma segunda cópia.
+PrivilegesRequiredOverridesAllowed=dialog
 ; Informações visuais
 WizardSmallImageFile=compiler:WizModernSmallImage.bmp
 ; Versão mínima do Windows (Windows 10+)
