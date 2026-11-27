@@ -75,6 +75,10 @@ def ler_planilha_topscan(caminho: str) -> pd.DataFrame:
     # configurado; as buscas de eventos usam 'Mouse 1 ...'.
     if 'Events' in df.columns:
         df['Events'] = df['Events'].replace(r'^Rat 1 ', 'Mouse 1 ', regex=True)
+
+    # Alguns exports gravam o par como 'A-B' em vez de 'AB'.
+    if 'OBJECTS' in df.columns:
+        df['OBJECTS'] = df['OBJECTS'].replace('-', '', regex=True)
     return df
 
 

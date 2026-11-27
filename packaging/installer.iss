@@ -8,7 +8,7 @@
 ; ============================================================================
 
 #define MyAppName "NeuroTrace"
-#define MyAppVersion "2.1.2"
+#define MyAppVersion "2.1.3"
 #define MyAppPublisher "Rodrigo Orvate"
 #define MyAppURL "https://github.com/RodrigoOrvate/NeuroTrace"
 #define MyAppExeName "NeuroTrace.exe"
