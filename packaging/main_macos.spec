@@ -87,8 +87,8 @@ app = BUNDLE(
     bundle_identifier='com.rodrigoorvate.neurotrace',
     info_plist={
         'CFBundleDisplayName': 'NeuroTrace',
-        'CFBundleShortVersionString': '2.1.2',
-        'CFBundleVersion': '2.1.2',
+        'CFBundleShortVersionString': '2.1.3',
+        'CFBundleVersion': '2.1.3',
         'NSHighResolutionCapable': True,
         'LSMinimumSystemVersion': '10.15',
         'NSRequiresAquaSystemAppearance': False,
